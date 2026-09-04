@@ -9,7 +9,7 @@ using Silk.NET.OpenGL;
 
 static class Program
 {
-    static Glfw glfw;
+    static readonly Glfw glfw;
 
     static Program()
     {
