@@ -1,4 +1,14 @@
-﻿// VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger) {
+﻿// https://github.com/Overv/VulkanTutorial/blob/main/code/15_hello_triangle.cpp
+
+using System.Runtime.InteropServices;
+using System.Text;
+using Silk.NET.Core.Native;
+using Silk.NET.GLFW;
+using Silk.NET.Vulkan;
+using Silk.NET.Vulkan.Extensions.EXT;
+using Silk.NET.Vulkan.Extensions.KHR;
+
+// VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger) {
 //     auto func = (PFN_vkCreateDebugUtilsMessengerEXT) vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
 //     if (func != null) {
 //         return func(instance, pCreateInfo, pAllocator, pDebugMessenger);
@@ -14,28 +24,23 @@
 //     }
 // }
 
-// struct QueueFamilyIndices {
-//     std::optional<uint32_t> graphicsFamily;
-//     std::optional<uint32_t> presentFamily;
+struct QueueFamilyIndices
+{
+    public uint? graphicsFamily;
+    public uint? presentFamily;
 
-//     bool isComplete() {
-//         return graphicsFamily.has_value() && presentFamily.has_value();
-//     }
-// };
+    public bool isComplete()
+    {
+        return graphicsFamily is not null && presentFamily is not null;
+    }
+}
 
-// struct SwapChainSupportDetails {
-//     VkSurfaceCapabilitiesKHR capabilities;
-//     std::vector<VkSurfaceFormatKHR> formats;
-//     std::vector<VkPresentModeKHR> presentModes;
-// };
-
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
-using System.Text;
-using Silk.NET.Core;
-using Silk.NET.Core.Native;
-using Silk.NET.GLFW;
-using Silk.NET.Vulkan;
+struct SwapChainSupportDetails
+{
+    public SurfaceCapabilitiesKHR capabilities;
+    public SurfaceFormatKHR[] formats;
+    public PresentModeKHR[] presentModes;
+};
 
 unsafe class HelloTriangleApplication
 {
@@ -65,18 +70,23 @@ unsafe class HelloTriangleApplication
 
     static readonly byte[] validationLayer = "VK_LAYER_KHRONOS_validation"u8.ToArray();
 
-    // const std::vector<const char*> deviceExtensions = {
-    //     VK_KHR_SWAPCHAIN_EXTENSION_NAME
-    // };
+    static readonly string[] deviceExtensions =
+    [
+        Silk.NET.Vulkan.Extensions.KHR.KhrSwapchain.ExtensionName,
+    ];
 
     private WindowHandle* window;
 
     private Instance instance;
 
-    //     VkDebugUtilsMessengerEXT debugMessenger;
-    //     VkSurfaceKHR surface;
+    private ExtDebugUtils extDebugUtils;
+    private DebugUtilsMessengerEXT debugMessenger;
 
-    //     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+    private KhrSurface khrSurface;
+    private SurfaceKHR surface;
+
+    private PhysicalDevice physicalDevice;
+
     //     VkDevice device;
 
     //     VkQueue graphicsQueue;
@@ -121,9 +131,9 @@ unsafe class HelloTriangleApplication
     void initVulkan()
     {
         createInstance();
-        //         setupDebugMessenger();
-        //         createSurface();
-        //         pickPhysicalDevice();
+        setupDebugMessenger();
+        createSurface();
+        pickPhysicalDevice();
         //         createLogicalDevice();
         //         createSwapChain();
         //         createImageViews();
@@ -185,7 +195,7 @@ unsafe class HelloTriangleApplication
         src.CopyTo(dst);
     }
 
-    unsafe void createInstance()
+    void createInstance()
     {
         if (enableValidationLayers && !checkValidationLayerSupport())
         {
@@ -239,17 +249,17 @@ unsafe class HelloTriangleApplication
                 createInfo.EnabledLayerCount = 1;
                 createInfo.PpEnabledLayerNames = &pvalidationLayer;
 
-                populateDebugMessengerCreateInfo(ref debugCreateInfo);
+                populateDebugMessengerCreateInfo(out debugCreateInfo);
                 createInfo.PNext = &debugCreateInfo;
             }
-            if (vk.CreateInstance(&createInfo, null, out var instance) != Result.Success)
+            if (vk.CreateInstance(&createInfo, null, out instance) != Result.Success)
             {
                 throw new Exception("failed to create instance!");
             }
         }
     }
 
-    void populateDebugMessengerCreateInfo(ref DebugUtilsMessengerCreateInfoEXT createInfo)
+    void populateDebugMessengerCreateInfo(out DebugUtilsMessengerCreateInfoEXT createInfo)
     {
         createInfo = new DebugUtilsMessengerCreateInfoEXT
         {
@@ -266,45 +276,68 @@ unsafe class HelloTriangleApplication
         };
     }
 
-    //     void setupDebugMessenger() {
-    //         if (!enableValidationLayers) return;
+    void setupDebugMessenger()
+    {
+        if (!enableValidationLayers)
+            return;
 
-    //         VkDebugUtilsMessengerCreateInfoEXT createInfo;
-    //         populateDebugMessengerCreateInfo(createInfo);
+        populateDebugMessengerCreateInfo(out var createInfo);
 
-    //         if (CreateDebugUtilsMessengerEXT(instance, &createInfo, null, &debugMessenger) != VK_SUCCESS) {
-    //             throw std::runtime_error("failed to set up debug messenger!");
-    //         }
-    //     }
+        // get api
+        if (!vk.TryGetInstanceExtension(instance, out extDebugUtils))
+        {
+            throw new Exception("TryGetInstanceExtension");
+        }
 
-    //     void createSurface() {
-    //         if (glfwCreateWindowSurface(instance, window, null, &surface) != VK_SUCCESS) {
-    //             throw std::runtime_error("failed to create window surface!");
-    //         }
-    //     }
+        if (
+            extDebugUtils.CreateDebugUtilsMessenger(instance, &createInfo, null, out debugMessenger)
+            != Result.Success
+        )
+        {
+            throw new Exception("failed to set up debug messenger!");
+        }
+    }
 
-    //     void pickPhysicalDevice() {
-    //         uint32_t deviceCount = 0;
-    //         vkEnumeratePhysicalDevices(instance, &deviceCount, null);
+    void createSurface()
+    {
+        VkNonDispatchableHandle _surface;
+        if (
+            (Result)glfw.CreateWindowSurface(new VkHandle(instance.Handle), window, null, &_surface)
+            != Result.Success
+        )
+        {
+            throw new Exception("failed to create window surface!");
+        }
+        surface = new(_surface.Handle);
+    }
 
-    //         if (deviceCount == 0) {
-    //             throw std::runtime_error("failed to find GPUs with Vulkan support!");
-    //         }
+    void pickPhysicalDevice()
+    {
+        uint physicalDeviceCount = 0;
+        vk.EnumeratePhysicalDevices(instance, &physicalDeviceCount, null);
 
-    //         std::vector<VkPhysicalDevice> devices(deviceCount);
-    //         vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
+        if (physicalDeviceCount == 0)
+        {
+            throw new Exception("failed to find GPUs with Vulkan support!");
+        }
 
-    //         for (const auto& device : devices) {
-    //             if (isDeviceSuitable(device)) {
-    //                 physicalDevice = device;
-    //                 break;
-    //             }
-    //         }
+        var physicalDevices = stackalloc PhysicalDevice[(int)physicalDeviceCount];
+        vk.EnumeratePhysicalDevices(instance, &physicalDeviceCount, physicalDevices);
 
-    //         if (physicalDevice == VK_NULL_HANDLE) {
-    //             throw std::runtime_error("failed to find a suitable GPU!");
-    //         }
-    //     }
+        for (int i = 0; i < physicalDeviceCount; ++i)
+        {
+            var _physicalDevice = physicalDevices[i];
+            if (isDeviceSuitable(_physicalDevice))
+            {
+                physicalDevice = _physicalDevice;
+                break;
+            }
+        }
+
+        //         if (physicalDevice == VK_NULL_HANDLE) {
+        //             throw new Exception("failed to find a suitable GPU!");
+        //         }
+    }
 
     //     void createLogicalDevice() {
     //         QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
@@ -343,7 +376,7 @@ unsafe class HelloTriangleApplication
     //         }
 
     //         if (vkCreateDevice(physicalDevice, &createInfo, null, &device) != VK_SUCCESS) {
-    //             throw std::runtime_error("failed to create logical device!");
+    //             throw new Exception("failed to create logical device!");
     //         }
 
     //         vkGetDeviceQueue(device, indices.graphicsFamily.value(), 0, &graphicsQueue);
@@ -392,7 +425,7 @@ unsafe class HelloTriangleApplication
     //         createInfo.oldSwapchain = VK_NULL_HANDLE;
 
     //         if (vkCreateSwapchainKHR(device, &createInfo, null, &swapChain) != VK_SUCCESS) {
-    //             throw std::runtime_error("failed to create swap chain!");
+    //             throw new Exception("failed to create swap chain!");
     //         }
 
     //         vkGetSwapchainImagesKHR(device, swapChain, &imageCount, null);
@@ -423,7 +456,7 @@ unsafe class HelloTriangleApplication
     //             createInfo.subresourceRange.layerCount = 1;
 
     //             if (vkCreateImageView(device, &createInfo, null, &swapChainImageViews[i]) != VK_SUCCESS) {
-    //                 throw std::runtime_error("failed to create image views!");
+    //                 throw new Exception("failed to create image views!");
     //             }
     //         }
     //     }
@@ -466,7 +499,7 @@ unsafe class HelloTriangleApplication
     //         renderPassInfo.pDependencies = &dependency;
 
     //         if (vkCreateRenderPass(device, &renderPassInfo, null, &renderPass) != VK_SUCCESS) {
-    //             throw std::runtime_error("failed to create render pass!");
+    //             throw new Exception("failed to create render pass!");
     //         }
     //     }
 
@@ -551,7 +584,7 @@ unsafe class HelloTriangleApplication
     //         pipelineLayoutInfo.pushConstantRangeCount = 0;
 
     //         if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, null, &pipelineLayout) != VK_SUCCESS) {
-    //             throw std::runtime_error("failed to create pipeline layout!");
+    //             throw new Exception("failed to create pipeline layout!");
     //         }
 
     //         VkGraphicsPipelineCreateInfo pipelineInfo{};
@@ -571,7 +604,7 @@ unsafe class HelloTriangleApplication
     //         pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
 
     //         if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, null, &graphicsPipeline) != VK_SUCCESS) {
-    //             throw std::runtime_error("failed to create graphics pipeline!");
+    //             throw new Exception("failed to create graphics pipeline!");
     //         }
 
     //         vkDestroyShaderModule(device, fragShaderModule, null);
@@ -596,7 +629,7 @@ unsafe class HelloTriangleApplication
     //             framebufferInfo.layers = 1;
 
     //             if (vkCreateFramebuffer(device, &framebufferInfo, null, &swapChainFramebuffers[i]) != VK_SUCCESS) {
-    //                 throw std::runtime_error("failed to create framebuffer!");
+    //                 throw new Exception("failed to create framebuffer!");
     //             }
     //         }
     //     }
@@ -610,7 +643,7 @@ unsafe class HelloTriangleApplication
     //         poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value();
 
     //         if (vkCreateCommandPool(device, &poolInfo, null, &commandPool) != VK_SUCCESS) {
-    //             throw std::runtime_error("failed to create command pool!");
+    //             throw new Exception("failed to create command pool!");
     //         }
     //     }
 
@@ -622,7 +655,7 @@ unsafe class HelloTriangleApplication
     //         allocInfo.commandBufferCount = 1;
 
     //         if (vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer) != VK_SUCCESS) {
-    //             throw std::runtime_error("failed to allocate command buffers!");
+    //             throw new Exception("failed to allocate command buffers!");
     //         }
     //     }
 
@@ -631,7 +664,7 @@ unsafe class HelloTriangleApplication
     //         beginInfo.SType = StructureType.COMMAND_BUFFER_BEGIN_INFO;
 
     //         if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
-    //             throw std::runtime_error("failed to begin recording command buffer!");
+    //             throw new Exception("failed to begin recording command buffer!");
     //         }
 
     //         VkRenderPassBeginInfo renderPassInfo{};
@@ -668,7 +701,7 @@ unsafe class HelloTriangleApplication
     //         vkCmdEndRenderPass(commandBuffer);
 
     //         if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
-    //             throw std::runtime_error("failed to record command buffer!");
+    //             throw new Exception("failed to record command buffer!");
     //         }
     //     }
 
@@ -683,7 +716,7 @@ unsafe class HelloTriangleApplication
     //         if (vkCreateSemaphore(device, &semaphoreInfo, null, &imageAvailableSemaphore) != VK_SUCCESS ||
     //             vkCreateSemaphore(device, &semaphoreInfo, null, &renderFinishedSemaphore) != VK_SUCCESS ||
     //             vkCreateFence(device, &fenceInfo, null, &inFlightFence) != VK_SUCCESS) {
-    //             throw std::runtime_error("failed to create synchronization objects for a frame!");
+    //             throw new Exception("failed to create synchronization objects for a frame!");
     //         }
 
     //     }
@@ -715,7 +748,7 @@ unsafe class HelloTriangleApplication
     //         submitInfo.pSignalSemaphores = signalSemaphores;
 
     //         if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFence) != VK_SUCCESS) {
-    //             throw std::runtime_error("failed to submit draw command buffer!");
+    //             throw new Exception("failed to submit draw command buffer!");
     //         }
 
     //         VkPresentInfoKHR presentInfo{};
@@ -741,7 +774,7 @@ unsafe class HelloTriangleApplication
 
     //         VkShaderModule shaderModule;
     //         if (vkCreateShaderModule(device, &createInfo, null, &shaderModule) != VK_SUCCESS) {
-    //             throw std::runtime_error("failed to create shader module!");
+    //             throw new Exception("failed to create shader module!");
     //         }
 
     //         return shaderModule;
@@ -786,91 +819,137 @@ unsafe class HelloTriangleApplication
     //         }
     //     }
 
-    //     SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device) {
-    //         SwapChainSupportDetails details;
+    SwapChainSupportDetails querySwapChainSupport(PhysicalDevice device)
+    {
+        if (!vk.TryGetInstanceExtension(instance, out khrSurface))
+        {
+            throw new Exception("TryGetInstanceExtension");
+        }
 
-    //         vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, &details.capabilities);
+        SwapChainSupportDetails details = default;
+        khrSurface.GetPhysicalDeviceSurfaceCapabilities(device, surface, &details.capabilities);
 
-    //         uint32_t formatCount;
-    //         vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, null);
+        uint formatCount;
+        khrSurface.GetPhysicalDeviceSurfaceFormats(device, surface, &formatCount, null);
 
-    //         if (formatCount != 0) {
-    //             details.formats.resize(formatCount);
-    //             vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, details.formats.data());
-    //         }
+        if (formatCount != 0)
+        {
+            // details.formats.resize(formatCount);
+            details.formats = new SurfaceFormatKHR[(int)formatCount];
+            fixed (SurfaceFormatKHR* formats = details.formats)
+            {
+                khrSurface.GetPhysicalDeviceSurfaceFormats(device, surface, &formatCount, formats);
+            }
+        }
+        else
+        {
+            details.formats = [];
+        }
 
-    //         uint32_t presentModeCount;
-    //         vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &presentModeCount, null);
+        uint presentModeCount;
+        khrSurface.GetPhysicalDeviceSurfacePresentModes(device, surface, &presentModeCount, null);
 
-    //         if (presentModeCount != 0) {
-    //             details.presentModes.resize(presentModeCount);
-    //             vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &presentModeCount, details.presentModes.data());
-    //         }
+        if (presentModeCount != 0)
+        {
+            details.presentModes = new PresentModeKHR[(int)presentModeCount];
+            fixed (PresentModeKHR* presentModes = details.presentModes)
+            {
+                khrSurface.GetPhysicalDeviceSurfacePresentModes(
+                    device,
+                    surface,
+                    &presentModeCount,
+                    presentModes
+                );
+            }
+        }
+        else
+        {
+            details.presentModes = [];
+        }
 
-    //         return details;
-    //     }
+        return details;
+    }
 
-    //     bool isDeviceSuitable(VkPhysicalDevice device) {
-    //         QueueFamilyIndices indices = findQueueFamilies(device);
+    bool isDeviceSuitable(PhysicalDevice physicalDevice)
+    {
+        var indices = findQueueFamilies(physicalDevice);
 
-    //         bool extensionsSupported = checkDeviceExtensionSupport(device);
+        bool extensionsSupported = checkDeviceExtensionSupport(physicalDevice);
 
-    //         bool swapChainAdequate = false;
-    //         if (extensionsSupported) {
-    //             SwapChainSupportDetails swapChainSupport = querySwapChainSupport(device);
-    //             swapChainAdequate = !swapChainSupport.formats.empty() && !swapChainSupport.presentModes.empty();
-    //         }
+        bool swapChainAdequate = false;
+        if (extensionsSupported)
+        {
+            var swapChainSupport = querySwapChainSupport(physicalDevice);
+            swapChainAdequate =
+                swapChainSupport.formats.Length > 0 && swapChainSupport.presentModes.Length > 0;
+        }
 
-    //         return indices.isComplete() && extensionsSupported && swapChainAdequate;
-    //     }
+        return indices.isComplete() && extensionsSupported && swapChainAdequate;
+    }
 
-    //     bool checkDeviceExtensionSupport(VkPhysicalDevice device) {
-    //         uint32_t extensionCount;
-    //         vkEnumerateDeviceExtensionProperties(device, null, &extensionCount, null);
+    bool checkDeviceExtensionSupport(PhysicalDevice device)
+    {
+        uint extensionCount;
+        vk.EnumerateDeviceExtensionProperties(device, (byte*)null, &extensionCount, null);
 
-    //         std::vector<VkExtensionProperties> availableExtensions(extensionCount);
-    //         vkEnumerateDeviceExtensionProperties(device, null, &extensionCount, availableExtensions.data());
+        var availableExtensions = stackalloc ExtensionProperties[(int)extensionCount];
+        vk.EnumerateDeviceExtensionProperties(
+            device,
+            (byte*)null,
+            &extensionCount,
+            availableExtensions
+        );
 
-    //         std::set<std::string> requiredExtensions(deviceExtensions.begin(), deviceExtensions.end());
+        var requiredExtensions = new HashSet<string>(deviceExtensions);
 
-    //         for (const auto& extension : availableExtensions) {
-    //             requiredExtensions.erase(extension.extensionName);
-    //         }
+        for (int i = 0; i < extensionCount; ++i)
+        {
+            var extensionName =
+                Marshal.PtrToStringAnsi((nint)availableExtensions[i].ExtensionName)
+                ?? throw new Exception();
+            requiredExtensions.Remove(extensionName);
+        }
 
-    //         return requiredExtensions.empty();
-    //     }
+        return requiredExtensions.Count == 0;
+    }
 
-    //     QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device) {
-    //         QueueFamilyIndices indices;
+    QueueFamilyIndices findQueueFamilies(PhysicalDevice device)
+    {
+        QueueFamilyIndices indices = default;
 
-    //         uint32_t queueFamilyCount = 0;
-    //         vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, null);
+        uint queueFamilyCount = 0;
+        vk.GetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, null);
 
-    //         std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
-    //         vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
+        var queueFamilies = stackalloc QueueFamilyProperties[(int)queueFamilyCount];
+        vk.GetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies);
 
-    //         int i = 0;
-    //         for (const auto& queueFamily : queueFamilies) {
-    //             if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
-    //                 indices.graphicsFamily = i;
-    //             }
+        uint i = 0;
+        for (int j = 0; j < queueFamilyCount; ++j)
+        {
+            var queueFamily = queueFamilies[j];
+            if (queueFamily.QueueFlags.HasFlag(QueueFlags.GraphicsBit))
+            {
+                indices.graphicsFamily = i;
+            }
 
-    //             VkBool32 presentSupport = false;
-    //             vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &presentSupport);
+            Silk.NET.Core.Bool32 presentSupport = false;
+            khrSurface.GetPhysicalDeviceSurfaceSupport(device, i, surface, &presentSupport);
 
-    //             if (presentSupport) {
-    //                 indices.presentFamily = i;
-    //             }
+            if (presentSupport)
+            {
+                indices.presentFamily = i;
+            }
 
-    //             if (indices.isComplete()) {
-    //                 break;
-    //             }
+            if (indices.isComplete())
+            {
+                break;
+            }
 
-    //             i++;
-    //         }
+            i++;
+        }
 
-    //         return indices;
-    //     }
+        return indices;
+    }
 
     bool checkValidationLayerSupport()
     {
@@ -887,18 +966,15 @@ unsafe class HelloTriangleApplication
             for (uint i = 0; i < layerCount; ++i)
             {
                 // find zero
-                int j=0;
-                for(; j<256; ++j)
+                int j = 0;
+                for (; j < 256; ++j)
                 {
                     if (availableLayers[i].LayerName[j] == 0)
                     {
                         break;
                     }
                 }
-                var availableLayerName = new ReadOnlySpan<byte>(
-                    availableLayers[i].LayerName,
-                    j
-                );
+                var availableLayerName = new ReadOnlySpan<byte>(availableLayers[i].LayerName, j);
                 if (validationLayer.AsSpan().SequenceEqual<byte>(availableLayerName))
                 {
                     layerFound = true;
@@ -919,7 +995,7 @@ unsafe class HelloTriangleApplication
     //         std::ifstream file(filename, std::ios::ate | std::ios::binary);
 
     //         if (!file.is_open()) {
-    //             throw std::runtime_error("failed to open file!");
+    //             throw new Exception("failed to open file!");
     //         }
 
     //         size_t fileSize = (size_t) file.tellg();
