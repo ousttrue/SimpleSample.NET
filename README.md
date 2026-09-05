@@ -15,21 +15,24 @@ Silk.NET はアクティブにメンテナンスされていて使いやすい�
 
 ## dirs
 
-### Glfw_GettingStarted
+### [Glfw_GettingStarted](./Glfw_GettingStarted/README.md)
 
 https://www.glfw.org/docs/latest/quick.html
 
-### ImGui_Glfw_opengl3
+### [ImGui_Glfw_opengl3](./ImGui_Glfw_opengl3/README.md)
 
 - https://github.com/ocornut/imgui/tree/master/examples/example_glfw_opengl3
-- https://github.com/ImGuiNET/ImGui.NET `v1.91.6.1`
 
-Silk.NET 版があるのだけど、
-改めて `c++` の `v1.91.6-docking` から移植。
+### [VkHelloTriangle](./VkHelloTriangle/README.md)
 
-- https://github.com/dotnet/Silk.NET/tree/57e0f8643c07702a16e14c027b1f15d60809d15b/src/OpenGL/Extensions/Silk.NET.OpenGL.Extensions.ImGui
+`glfw3` + `vulkan`
 
-`ImGui.NET` のバージョンと同じタグの `c++` を参照しないと微妙に変化していることがある。
+- https://vulkan-tutorial.com/Drawing_a_triangle/Setup/Base_code
+- https://github.com/Overv/VulkanTutorial/blob/main/code/15_hello_triangle.cpp
+
+### TODO: ImGui_Glfw_vulkan
+
+- vulkan-1.3 により RenderPass の作成を回避する。
 
 ## slnx
 

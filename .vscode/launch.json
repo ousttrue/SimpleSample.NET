@@ -5,11 +5,22 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": ".NET Core Launch (console)",
+            "name": "ImGui_Glfw_opengl3",
             "type": "coreclr",
             "request": "launch",
             "preLaunchTask": "build",
             "program": "${workspaceFolder}/ImGui_Glfw_opengl3/bin/Debug/net10.0/ImGui_Glfw_opengl3.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "stopAtEntry": false,
+            "console": "internalConsole"
+        },
+        {
+            "name": "VkHelloTriangle",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build",
+            "program": "${workspaceFolder}/VkHelloTriangle/bin/Debug/net10.0/VkHelloTriangle.dll",
             "args": [],
             "cwd": "${workspaceFolder}",
             "stopAtEntry": false,
