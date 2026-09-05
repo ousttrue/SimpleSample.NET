@@ -228,37 +228,40 @@ unsafe class HelloTriangleApplication
 
     void cleanup()
     {
-        //         vkDestroySemaphore(device, renderFinishedSemaphore, null);
-        //         vkDestroySemaphore(device, imageAvailableSemaphore, null);
-        //         vkDestroyFence(device, inFlightFence, null);
+        vk.DestroySemaphore(device, renderFinishedSemaphore, null);
+        vk.DestroySemaphore(device, imageAvailableSemaphore, null);
+        vk.DestroyFence(device, inFlightFence, null);
 
-        //         vkDestroyCommandPool(device, commandPool, null);
+        vk.DestroyCommandPool(device, commandPool, null);
 
-        //         for (auto framebuffer : swapChainFramebuffers) {
-        //             vkDestroyFramebuffer(device, framebuffer, null);
-        //         }
+        foreach (var framebuffer in swapChainFramebuffers)
+        {
+            vk.DestroyFramebuffer(device, framebuffer, null);
+        }
 
-        //         vkDestroyPipeline(device, graphicsPipeline, null);
-        //         vkDestroyPipelineLayout(device, pipelineLayout, null);
-        //         vkDestroyRenderPass(device, renderPass, null);
+        vk.DestroyPipeline(device, graphicsPipeline, null);
+        vk.DestroyPipelineLayout(device, pipelineLayout, null);
+        vk.DestroyRenderPass(device, renderPass, null);
 
-        //         for (auto imageView : swapChainImageViews) {
-        //             vkDestroyImageView(device, imageView, null);
-        //         }
+        foreach (var imageView in swapChainImageViews)
+        {
+            vk.DestroyImageView(device, imageView, null);
+        }
 
-        //         vkDestroySwapchainKHR(device, swapChain, null);
-        //         vkDestroyDevice(device, null);
+        khrSwapchain.DestroySwapchain(device, swapChain, null);
+        vk.DestroyDevice(device, null);
 
-        //         if (enableValidationLayers) {
-        //             DestroyDebugUtilsMessengerEXT(instance, debugMessenger, null);
-        //         }
+        if (enableValidationLayers)
+        {
+            extDebugUtils.DestroyDebugUtilsMessenger(instance, debugMessenger, null);
+        }
 
-        //         vkDestroySurfaceKHR(instance, surface, null);
-        //         vkDestroyInstance(instance, null);
+        khrSurface.DestroySurface(instance, surface, null);
+        vk.DestroyInstance(instance, null);
 
-        //         glfwDestroyWindow(window);
+        glfw.DestroyWindow(window);
 
-        //         glfwTerminate();
+        glfw.Terminate();
     }
 
     static void StrCopy(Span<byte> dst, ReadOnlySpan<byte> src)
@@ -388,9 +391,10 @@ unsafe class HelloTriangleApplication
             }
         }
 
-        //         if (physicalDevice == VK_NULL_HANDLE) {
-        //             throw new Exception("failed to find a suitable GPU!");
-        //         }
+        if (physicalDevice.Handle == default)
+        {
+            throw new Exception("failed to find a suitable GPU!");
+        }
     }
 
     void createLogicalDevice()
@@ -497,7 +501,8 @@ unsafe class HelloTriangleApplication
         }
 
         createInfo.PreTransform = swapChainSupport.capabilities.CurrentTransform;
-        createInfo.CompositeAlpha = CompositeAlphaFlagsKHR.CompositeAlphaOpaqueBitKhr;
+        // createInfo.CompositeAlpha = CompositeAlphaFlagsKHR.CompositeAlphaOpaqueBitKhr;
+        createInfo.CompositeAlpha = CompositeAlphaFlagsKHR.OpaqueBitKhr;
         createInfo.PresentMode = presentMode;
         createInfo.Clipped = true;
 
@@ -585,7 +590,7 @@ unsafe class HelloTriangleApplication
             SrcStageMask = PipelineStageFlags.ColorAttachmentOutputBit,
             SrcAccessMask = 0,
             DstStageMask = PipelineStageFlags.ColorAttachmentOutputBit,
-            DstAccessMask = AccessFlags.ColorAttachmentWriteBit
+            DstAccessMask = AccessFlags.ColorAttachmentWriteBit,
         };
 
         var renderPassInfo = new RenderPassCreateInfo
