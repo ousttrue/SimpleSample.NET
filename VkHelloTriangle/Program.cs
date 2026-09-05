@@ -1,28 +1,69 @@
 ﻿// https://github.com/Overv/VulkanTutorial/blob/main/code/15_hello_triangle.cpp
 
+using System.Collections;
+using System.Formats.Asn1;
 using System.Runtime.InteropServices;
-using System.Text;
 using Silk.NET.Core.Native;
 using Silk.NET.GLFW;
 using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.EXT;
 using Silk.NET.Vulkan.Extensions.KHR;
+using VkQueue = Silk.NET.Vulkan.Queue;
 
-// VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger) {
-//     auto func = (PFN_vkCreateDebugUtilsMessengerEXT) vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
-//     if (func != null) {
-//         return func(instance, pCreateInfo, pAllocator, pDebugMessenger);
-//     } else {
-//         return VK_ERROR_EXTENSION_NOT_PRESENT;
-//     }
-// }
+unsafe class ByteStringArrayAllocator : IDisposable, IEnumerable
+{
+    List<string> _list = [];
+    byte** _array;
 
-// void DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT debugMessenger, const VkAllocationCallbacks* pAllocator) {
-//     auto func = (PFN_vkDestroyDebugUtilsMessengerEXT) vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
-//     if (func != null) {
-//         func(instance, debugMessenger, pAllocator);
-//     }
-// }
+    public IEnumerator GetEnumerator()
+    {
+        return _list.GetEnumerator();
+    }
+
+    public void Deconstruct(out uint x, out byte** y)
+    {
+        Dispose();
+
+        _array = (byte**)Marshal.AllocHGlobal(sizeof(byte*) * _list.Count);
+        for (int i = 0; i < _list.Count; ++i)
+        {
+            _array[i] = (byte*)Marshal.StringToHGlobalAnsi(_list[i]);
+        }
+        x = (uint)_list.Count;
+        y = _array;
+    }
+
+    public void Dispose()
+    {
+        if (_array != null)
+        {
+            for (int i = 0; i < _list.Count; ++i)
+            {
+                Marshal.FreeHGlobal((nint)_array[i]);
+            }
+            Marshal.FreeHGlobal((nint)_array);
+        }
+    }
+
+    public void Add(string p)
+    {
+        _list.Add(p);
+    }
+
+    public void AddSpan(ReadOnlySpan<IntPtr> pp)
+    {
+        foreach (var p in pp)
+        {
+            _list.Add(Marshal.PtrToStringAnsi(p) ?? throw new Exception());
+        }
+    }
+
+    public void AddSpan(byte** _pp, uint count)
+    {
+        var pp = (IntPtr*)_pp;
+        AddSpan(new ReadOnlySpan<nint>(pp, (int)count));
+    }
+}
 
 struct QueueFamilyIndices
 {
@@ -32,6 +73,20 @@ struct QueueFamilyIndices
     public bool isComplete()
     {
         return graphicsFamily is not null && presentFamily is not null;
+    }
+
+    public HashSet<uint> ToUniqueSet()
+    {
+        var set = new HashSet<uint>();
+        if (graphicsFamily is uint g)
+        {
+            set.Add(g);
+        }
+        if (presentFamily is uint p)
+        {
+            set.Add(p);
+        }
+        return set;
     }
 }
 
@@ -62,21 +117,12 @@ unsafe class HelloTriangleApplication
         false;
 #endif
 
-    static readonly byte[] ExtDebugUtilsName = Encoding.ASCII.GetBytes(
-        Silk.NET.Vulkan.Extensions.EXT.ExtDebugUtils.ExtensionName
-    );
-
     // const int MAX_FRAMES_IN_FLIGHT = 2;
 
-    static readonly byte[] validationLayer = "VK_LAYER_KHRONOS_validation"u8.ToArray();
-
-    static readonly string[] deviceExtensions =
-    [
-        Silk.NET.Vulkan.Extensions.KHR.KhrSwapchain.ExtensionName,
-    ];
+    static readonly string[] validationLayers = ["VK_LAYER_KHRONOS_validation"];
+    static readonly string[] deviceExtensions = [KhrSwapchain.ExtensionName];
 
     private WindowHandle* window;
-
     private Instance instance;
 
     private ExtDebugUtils extDebugUtils;
@@ -86,11 +132,10 @@ unsafe class HelloTriangleApplication
     private SurfaceKHR surface;
 
     private PhysicalDevice physicalDevice;
+    private Device device;
 
-    //     VkDevice device;
-
-    //     VkQueue graphicsQueue;
-    //     VkQueue presentQueue;
+    private VkQueue graphicsQueue;
+    private VkQueue presentQueue;
 
     //     VkSwapchainKHR swapChain;
     //     std::vector<VkImage> swapChainImages;
@@ -131,11 +176,22 @@ unsafe class HelloTriangleApplication
     void initVulkan()
     {
         createInstance();
+
+        // get api
+        if (!vk.TryGetInstanceExtension(instance, out khrSurface))
+        {
+            throw new Exception("TryGetInstanceExtension");
+        }
+        if (!vk.TryGetInstanceExtension(instance, out extDebugUtils))
+        {
+            throw new Exception("TryGetInstanceExtension");
+        }
+
         setupDebugMessenger();
         createSurface();
         pickPhysicalDevice();
-        //         createLogicalDevice();
-        //         createSwapChain();
+        createLogicalDevice();
+        createSwapChain();
         //         createImageViews();
         //         createRenderPass();
         //         createGraphicsPipeline();
@@ -204,24 +260,16 @@ unsafe class HelloTriangleApplication
 
         fixed (byte* appName = "Hello Triangle"u8)
         fixed (byte* engineName = "No Engine"u8)
-        fixed (byte* EXT_DEBUG_UTILS_NAME = ExtDebugUtilsName)
-        fixed (byte* pvalidationLayer = validationLayer)
+        // fixed (byte* EXT_DEBUG_UTILS_NAME = Silk.NET.Vulkan.Extensions.EXT.ExtDebugUtils.ExtensionName)
+        // fixed (byte* pvalidationLayer = validationLayer)
         {
             var glfwExtensions = glfw.GetRequiredInstanceExtensions(out var glfwExtensionCount);
-            var extensionsCount = (int)glfwExtensionCount;
+
+            using var extensions = new ByteStringArrayAllocator();
+            extensions.AddSpan(glfwExtensions, glfwExtensionCount);
             if (enableValidationLayers)
             {
-                ++extensionsCount;
-            }
-            var extensions = stackalloc byte*[extensionsCount];
-            int i = 0;
-            for (; i < glfwExtensionCount; ++i)
-            {
-                extensions[i] = glfwExtensions[i];
-            }
-            if (enableValidationLayers)
-            {
-                extensions[i] = EXT_DEBUG_UTILS_NAME;
+                extensions.Add(ExtDebugUtils.ExtensionName);
             }
 
             var appInfo = new ApplicationInfo
@@ -237,17 +285,16 @@ unsafe class HelloTriangleApplication
             {
                 SType = StructureType.InstanceCreateInfo,
                 PApplicationInfo = &appInfo,
-                EnabledExtensionCount = (uint)extensionsCount,
-                PpEnabledExtensionNames = extensions,
                 EnabledLayerCount = 0,
                 PNext = null,
             };
+            (createInfo.EnabledExtensionCount, createInfo.PpEnabledExtensionNames) = extensions;
 
             DebugUtilsMessengerCreateInfoEXT debugCreateInfo = default;
+            ByteStringArrayAllocator layers = [.. validationLayers];
             if (enableValidationLayers)
             {
-                createInfo.EnabledLayerCount = 1;
-                createInfo.PpEnabledLayerNames = &pvalidationLayer;
+                (createInfo.EnabledLayerCount, createInfo.PpEnabledLayerNames) = layers;
 
                 populateDebugMessengerCreateInfo(out debugCreateInfo);
                 createInfo.PNext = &debugCreateInfo;
@@ -282,12 +329,6 @@ unsafe class HelloTriangleApplication
             return;
 
         populateDebugMessengerCreateInfo(out var createInfo);
-
-        // get api
-        if (!vk.TryGetInstanceExtension(instance, out extDebugUtils))
-        {
-            throw new Exception("TryGetInstanceExtension");
-        }
 
         if (
             extDebugUtils.CreateDebugUtilsMessenger(instance, &createInfo, null, out debugMessenger)
@@ -339,102 +380,113 @@ unsafe class HelloTriangleApplication
         //         }
     }
 
-    //     void createLogicalDevice() {
-    //         QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
+    void createLogicalDevice()
+    {
+        var indices = findQueueFamilies(physicalDevice);
 
-    //         std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
-    //         std::set<uint32_t> uniqueQueueFamilies = {indices.graphicsFamily.value(), indices.presentFamily.value()};
+        var uniqueQueueFamilies = indices.ToUniqueSet();
+        var queueCreateInfos = stackalloc DeviceQueueCreateInfo[2];
+        float queuePriority = 1.0f;
 
-    //         float queuePriority = 1.0f;
-    //         for (uint32_t queueFamily : uniqueQueueFamilies) {
-    //             VkDeviceQueueCreateInfo queueCreateInfo{};
-    //             queueCreateInfo.SType = StructureType.DEVICE_QUEUE_CREATE_INFO;
-    //             queueCreateInfo.queueFamilyIndex = queueFamily;
-    //             queueCreateInfo.queueCount = 1;
-    //             queueCreateInfo.pQueuePriorities = &queuePriority;
-    //             queueCreateInfos.push_back(queueCreateInfo);
-    //         }
+        uint uniq = 0;
+        foreach (var queueFamily in uniqueQueueFamilies)
+        {
+            queueCreateInfos[uniq].SType = StructureType.DeviceQueueCreateInfo;
+            queueCreateInfos[uniq].QueueFamilyIndex = queueFamily;
+            queueCreateInfos[uniq].QueueCount = 1;
+            queueCreateInfos[uniq].PQueuePriorities = &queuePriority;
+            ++uniq;
+        }
 
-    //         VkPhysicalDeviceFeatures deviceFeatures{};
+        PhysicalDeviceFeatures deviceFeatures = default;
 
-    //         VkDeviceCreateInfo createInfo{};
-    //         createInfo.SType = StructureType.DEVICE_CREATE_INFO;
+        var createInfo = new DeviceCreateInfo
+        {
+            SType = StructureType.DeviceCreateInfo,
+            QueueCreateInfoCount = uniq,
+            PQueueCreateInfos = queueCreateInfos,
+            PEnabledFeatures = &deviceFeatures,
+        };
 
-    //         createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
-    //         createInfo.pQueueCreateInfos = queueCreateInfos.data();
+        ByteStringArrayAllocator extensions = [.. deviceExtensions];
+        (createInfo.EnabledExtensionCount, createInfo.PpEnabledExtensionNames) = extensions;
 
-    //         createInfo.pEnabledFeatures = &deviceFeatures;
+        ByteStringArrayAllocator layers = [.. validationLayers];
+        if (enableValidationLayers)
+        {
+            (createInfo.EnabledLayerCount, createInfo.PpEnabledLayerNames) = layers;
+        }
 
-    //         createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
-    //         createInfo.ppEnabledExtensionNames = deviceExtensions.data();
+        if (vk.CreateDevice(physicalDevice, &createInfo, null, out device) != Result.Success)
+        {
+            throw new Exception("failed to create logical device!");
+        }
 
-    //         if (enableValidationLayers) {
-    //             createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
-    //             createInfo.ppEnabledLayerNames = validationLayers.data();
-    //         } else {
-    //             createInfo.enabledLayerCount = 0;
-    //         }
+        if (indices.graphicsFamily is not uint graphicsFamily)
+        {
+            throw new Exception();
+        }
+        vk.GetDeviceQueue(device, graphicsFamily, 0, out graphicsQueue);
+        if (indices.presentFamily is not uint presentFamily)
+        {
+            throw new Exception();
+        }
+        vk.GetDeviceQueue(device, presentFamily, 0, out presentQueue);
+    }
 
-    //         if (vkCreateDevice(physicalDevice, &createInfo, null, &device) != VK_SUCCESS) {
-    //             throw new Exception("failed to create logical device!");
-    //         }
+    void createSwapChain()
+    {
+        var swapChainSupport = querySwapChainSupport(physicalDevice);
 
-    //         vkGetDeviceQueue(device, indices.graphicsFamily.value(), 0, &graphicsQueue);
-    //         vkGetDeviceQueue(device, indices.presentFamily.value(), 0, &presentQueue);
-    //     }
+        var surfaceFormat = chooseSwapSurfaceFormat(swapChainSupport.formats);
+        //         VkPresentModeKHR presentMode = chooseSwapPresentMode(swapChainSupport.presentModes);
+        //         VkExtent2D extent = chooseSwapExtent(swapChainSupport.capabilities);
 
-    //     void createSwapChain() {
-    //         SwapChainSupportDetails swapChainSupport = querySwapChainSupport(physicalDevice);
+        //         uint32_t imageCount = swapChainSupport.capabilities.minImageCount + 1;
+        //         if (swapChainSupport.capabilities.maxImageCount > 0 && imageCount > swapChainSupport.capabilities.maxImageCount) {
+        //             imageCount = swapChainSupport.capabilities.maxImageCount;
+        //         }
 
-    //         VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(swapChainSupport.formats);
-    //         VkPresentModeKHR presentMode = chooseSwapPresentMode(swapChainSupport.presentModes);
-    //         VkExtent2D extent = chooseSwapExtent(swapChainSupport.capabilities);
+        //         VkSwapchainCreateInfoKHR createInfo{};
+        //         createInfo.SType = StructureType.SWAPCHAIN_CREATE_INFO_KHR;
+        //         createInfo.surface = surface;
 
-    //         uint32_t imageCount = swapChainSupport.capabilities.minImageCount + 1;
-    //         if (swapChainSupport.capabilities.maxImageCount > 0 && imageCount > swapChainSupport.capabilities.maxImageCount) {
-    //             imageCount = swapChainSupport.capabilities.maxImageCount;
-    //         }
+        //         createInfo.minImageCount = imageCount;
+        //         createInfo.imageFormat = surfaceFormat.format;
+        //         createInfo.imageColorSpace = surfaceFormat.colorSpace;
+        //         createInfo.imageExtent = extent;
+        //         createInfo.imageArrayLayers = 1;
+        //         createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 
-    //         VkSwapchainCreateInfoKHR createInfo{};
-    //         createInfo.SType = StructureType.SWAPCHAIN_CREATE_INFO_KHR;
-    //         createInfo.surface = surface;
+        //         QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
+        //         uint32_t queueFamilyIndices[] = {indices.graphicsFamily.value(), indices.presentFamily.value()};
 
-    //         createInfo.minImageCount = imageCount;
-    //         createInfo.imageFormat = surfaceFormat.format;
-    //         createInfo.imageColorSpace = surfaceFormat.colorSpace;
-    //         createInfo.imageExtent = extent;
-    //         createInfo.imageArrayLayers = 1;
-    //         createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+        //         if (indices.graphicsFamily != indices.presentFamily) {
+        //             createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
+        //             createInfo.queueFamilyIndexCount = 2;
+        //             createInfo.pQueueFamilyIndices = queueFamilyIndices;
+        //         } else {
+        //             createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        //         }
 
-    //         QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
-    //         uint32_t queueFamilyIndices[] = {indices.graphicsFamily.value(), indices.presentFamily.value()};
+        //         createInfo.preTransform = swapChainSupport.capabilities.currentTransform;
+        //         createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+        //         createInfo.presentMode = presentMode;
+        //         createInfo.clipped = VK_TRUE;
 
-    //         if (indices.graphicsFamily != indices.presentFamily) {
-    //             createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
-    //             createInfo.queueFamilyIndexCount = 2;
-    //             createInfo.pQueueFamilyIndices = queueFamilyIndices;
-    //         } else {
-    //             createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    //         }
+        //         createInfo.oldSwapchain = VK_NULL_HANDLE;
 
-    //         createInfo.preTransform = swapChainSupport.capabilities.currentTransform;
-    //         createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-    //         createInfo.presentMode = presentMode;
-    //         createInfo.clipped = VK_TRUE;
+        //         if (vkCreateSwapchainKHR(device, &createInfo, null, &swapChain) != Result.Success) {
+        //             throw new Exception("failed to create swap chain!");
+        //         }
 
-    //         createInfo.oldSwapchain = VK_NULL_HANDLE;
+        //         vkGetSwapchainImagesKHR(device, swapChain, &imageCount, null);
+        //         swapChainImages.resize(imageCount);
+        //         vkGetSwapchainImagesKHR(device, swapChain, &imageCount, swapChainImages.data());
 
-    //         if (vkCreateSwapchainKHR(device, &createInfo, null, &swapChain) != VK_SUCCESS) {
-    //             throw new Exception("failed to create swap chain!");
-    //         }
-
-    //         vkGetSwapchainImagesKHR(device, swapChain, &imageCount, null);
-    //         swapChainImages.resize(imageCount);
-    //         vkGetSwapchainImagesKHR(device, swapChain, &imageCount, swapChainImages.data());
-
-    //         swapChainImageFormat = surfaceFormat.format;
-    //         swapChainExtent = extent;
-    //     }
+        //         swapChainImageFormat = surfaceFormat.format;
+        //         swapChainExtent = extent;
+    }
 
     //     void createImageViews() {
     //         swapChainImageViews.resize(swapChainImages.size());
@@ -455,7 +507,7 @@ unsafe class HelloTriangleApplication
     //             createInfo.subresourceRange.baseArrayLayer = 0;
     //             createInfo.subresourceRange.layerCount = 1;
 
-    //             if (vkCreateImageView(device, &createInfo, null, &swapChainImageViews[i]) != VK_SUCCESS) {
+    //             if (vkCreateImageView(device, &createInfo, null, &swapChainImageViews[i]) != Result.Success) {
     //                 throw new Exception("failed to create image views!");
     //             }
     //         }
@@ -498,7 +550,7 @@ unsafe class HelloTriangleApplication
     //         renderPassInfo.dependencyCount = 1;
     //         renderPassInfo.pDependencies = &dependency;
 
-    //         if (vkCreateRenderPass(device, &renderPassInfo, null, &renderPass) != VK_SUCCESS) {
+    //         if (vkCreateRenderPass(device, &renderPassInfo, null, &renderPass) != Result.Success) {
     //             throw new Exception("failed to create render pass!");
     //         }
     //     }
@@ -583,7 +635,7 @@ unsafe class HelloTriangleApplication
     //         pipelineLayoutInfo.setLayoutCount = 0;
     //         pipelineLayoutInfo.pushConstantRangeCount = 0;
 
-    //         if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, null, &pipelineLayout) != VK_SUCCESS) {
+    //         if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, null, &pipelineLayout) != Result.Success) {
     //             throw new Exception("failed to create pipeline layout!");
     //         }
 
@@ -603,7 +655,7 @@ unsafe class HelloTriangleApplication
     //         pipelineInfo.subpass = 0;
     //         pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
 
-    //         if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, null, &graphicsPipeline) != VK_SUCCESS) {
+    //         if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, null, &graphicsPipeline) != Result.Success) {
     //             throw new Exception("failed to create graphics pipeline!");
     //         }
 
@@ -628,7 +680,7 @@ unsafe class HelloTriangleApplication
     //             framebufferInfo.height = swapChainExtent.height;
     //             framebufferInfo.layers = 1;
 
-    //             if (vkCreateFramebuffer(device, &framebufferInfo, null, &swapChainFramebuffers[i]) != VK_SUCCESS) {
+    //             if (vkCreateFramebuffer(device, &framebufferInfo, null, &swapChainFramebuffers[i]) != Result.Success) {
     //                 throw new Exception("failed to create framebuffer!");
     //             }
     //         }
@@ -642,7 +694,7 @@ unsafe class HelloTriangleApplication
     //         poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
     //         poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value();
 
-    //         if (vkCreateCommandPool(device, &poolInfo, null, &commandPool) != VK_SUCCESS) {
+    //         if (vkCreateCommandPool(device, &poolInfo, null, &commandPool) != Result.Success) {
     //             throw new Exception("failed to create command pool!");
     //         }
     //     }
@@ -654,7 +706,7 @@ unsafe class HelloTriangleApplication
     //         allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     //         allocInfo.commandBufferCount = 1;
 
-    //         if (vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer) != VK_SUCCESS) {
+    //         if (vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer) != Result.Success) {
     //             throw new Exception("failed to allocate command buffers!");
     //         }
     //     }
@@ -663,7 +715,7 @@ unsafe class HelloTriangleApplication
     //         VkCommandBufferBeginInfo beginInfo{};
     //         beginInfo.SType = StructureType.COMMAND_BUFFER_BEGIN_INFO;
 
-    //         if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
+    //         if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != Result.Success) {
     //             throw new Exception("failed to begin recording command buffer!");
     //         }
 
@@ -700,7 +752,7 @@ unsafe class HelloTriangleApplication
 
     //         vkCmdEndRenderPass(commandBuffer);
 
-    //         if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
+    //         if (vkEndCommandBuffer(commandBuffer) != Result.Success) {
     //             throw new Exception("failed to record command buffer!");
     //         }
     //     }
@@ -713,9 +765,9 @@ unsafe class HelloTriangleApplication
     //         fenceInfo.SType = StructureType.FENCE_CREATE_INFO;
     //         fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
-    //         if (vkCreateSemaphore(device, &semaphoreInfo, null, &imageAvailableSemaphore) != VK_SUCCESS ||
-    //             vkCreateSemaphore(device, &semaphoreInfo, null, &renderFinishedSemaphore) != VK_SUCCESS ||
-    //             vkCreateFence(device, &fenceInfo, null, &inFlightFence) != VK_SUCCESS) {
+    //         if (vkCreateSemaphore(device, &semaphoreInfo, null, &imageAvailableSemaphore) != Result.Success ||
+    //             vkCreateSemaphore(device, &semaphoreInfo, null, &renderFinishedSemaphore) != Result.Success ||
+    //             vkCreateFence(device, &fenceInfo, null, &inFlightFence) != Result.Success) {
     //             throw new Exception("failed to create synchronization objects for a frame!");
     //         }
 
@@ -747,7 +799,7 @@ unsafe class HelloTriangleApplication
     //         submitInfo.signalSemaphoreCount = 1;
     //         submitInfo.pSignalSemaphores = signalSemaphores;
 
-    //         if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFence) != VK_SUCCESS) {
+    //         if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFence) != Result.Success) {
     //             throw new Exception("failed to submit draw command buffer!");
     //         }
 
@@ -773,22 +825,28 @@ unsafe class HelloTriangleApplication
     //         createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
 
     //         VkShaderModule shaderModule;
-    //         if (vkCreateShaderModule(device, &createInfo, null, &shaderModule) != VK_SUCCESS) {
+    //         if (vkCreateShaderModule(device, &createInfo, null, &shaderModule) != Result.Success) {
     //             throw new Exception("failed to create shader module!");
     //         }
 
     //         return shaderModule;
     //     }
 
-    //     VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats) {
-    //         for (const auto& availableFormat : availableFormats) {
-    //             if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB && availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-    //                 return availableFormat;
-    //             }
-    //         }
+    SurfaceFormatKHR chooseSwapSurfaceFormat(ReadOnlySpan<SurfaceFormatKHR> availableFormats)
+    {
+        foreach (var availableFormat in availableFormats)
+        {
+            if (
+                availableFormat.Format == Format.B8G8R8A8Srgb
+                && availableFormat.ColorSpace == ColorSpaceKHR.SpaceSrgbNonlinearKhr
+            )
+            {
+                return availableFormat;
+            }
+        }
 
-    //         return availableFormats[0];
-    //     }
+        return availableFormats[0];
+    }
 
     //     VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes) {
     //         for (const auto& availablePresentMode : availablePresentModes) {
@@ -821,11 +879,6 @@ unsafe class HelloTriangleApplication
 
     SwapChainSupportDetails querySwapChainSupport(PhysicalDevice device)
     {
-        if (!vk.TryGetInstanceExtension(instance, out khrSurface))
-        {
-            throw new Exception("TryGetInstanceExtension");
-        }
-
         SwapChainSupportDetails details = default;
         khrSurface.GetPhysicalDeviceSurfaceCapabilities(device, surface, &details.capabilities);
 
@@ -900,8 +953,7 @@ unsafe class HelloTriangleApplication
             availableExtensions
         );
 
-        var requiredExtensions = new HashSet<string>(deviceExtensions);
-
+        HashSet<string> requiredExtensions = [.. deviceExtensions];
         for (int i = 0; i < extensionCount; ++i)
         {
             var extensionName =
@@ -959,7 +1011,7 @@ unsafe class HelloTriangleApplication
         var availableLayers = stackalloc LayerProperties[(int)layerCount];
         vk.EnumerateInstanceLayerProperties(&layerCount, availableLayers);
 
-        // foreach (var layerName in validationLayers)
+        foreach (var layerName in validationLayers)
         {
             bool layerFound = false;
 
@@ -974,8 +1026,10 @@ unsafe class HelloTriangleApplication
                         break;
                     }
                 }
-                var availableLayerName = new ReadOnlySpan<byte>(availableLayers[i].LayerName, j);
-                if (validationLayer.AsSpan().SequenceEqual<byte>(availableLayerName))
+                var availableLayerName = Marshal.PtrToStringAnsi(
+                    (nint)availableLayers[i].LayerName
+                );
+                if (layerName == availableLayerName)
                 {
                     layerFound = true;
                     break;
