@@ -217,12 +217,13 @@ unsafe class HelloTriangleApplication
 
     void mainLoop()
     {
-        //         while (!glfwWindowShouldClose(window)) {
-        //             glfwPollEvents();
-        //             drawFrame();
-        //         }
+        while (!glfw.WindowShouldClose(window))
+        {
+            glfw.PollEvents();
+            drawFrame();
+        }
 
-        //         vkDeviceWaitIdle(device);
+        vk.DeviceWaitIdle(device);
     }
 
     void cleanup()
@@ -577,13 +578,15 @@ unsafe class HelloTriangleApplication
             PColorAttachments = &colorAttachmentRef,
         };
 
-        var dependency = new SubpassDependency { };
-        dependency.SrcSubpass = Vk.SubpassExternal;
-        dependency.DstSubpass = 0;
-        dependency.SrcStageMask = PipelineStageFlags.ColorAttachmentOutputBit;
-        dependency.SrcAccessMask = 0;
-        dependency.DstStageMask = PipelineStageFlags.ColorAttachmentOutputBit;
-        dependency.DstAccessMask = AccessFlags.ColorAttachmentWriteBit;
+        var dependency = new SubpassDependency
+        {
+            SrcSubpass = Vk.SubpassExternal,
+            DstSubpass = 0,
+            SrcStageMask = PipelineStageFlags.ColorAttachmentOutputBit,
+            SrcAccessMask = 0,
+            DstStageMask = PipelineStageFlags.ColorAttachmentOutputBit,
+            DstAccessMask = AccessFlags.ColorAttachmentWriteBit
+        };
 
         var renderPassInfo = new RenderPassCreateInfo
         {
@@ -604,10 +607,10 @@ unsafe class HelloTriangleApplication
 
     void createGraphicsPipeline()
     {
-        var vertShaderCode = File.ReadAllBytes("shaders/vert.spv");
+        var vertShaderCode = ShaderResource.FromAssembly("shader.vert.spv");
         var vertShaderModule = createShaderModule(vertShaderCode);
 
-        var fragShaderCode = File.ReadAllBytes("shaders/frag.spv");
+        var fragShaderCode = ShaderResource.FromAssembly("shader.frag.spv");
         var fragShaderModule = createShaderModule(fragShaderCode);
 
         fixed (byte* main = "main"u8)
@@ -816,51 +819,62 @@ unsafe class HelloTriangleApplication
         }
     }
 
-    //     void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
-    //         VkCommandBufferBeginInfo beginInfo{};
-    //         beginInfo.SType = StructureType.COMMAND_BUFFER_BEGIN_INFO;
+    void recordCommandBuffer(CommandBuffer commandBuffer, uint imageIndex)
+    {
+        var beginInfo = new CommandBufferBeginInfo { SType = StructureType.CommandBufferBeginInfo };
+        if (vk.BeginCommandBuffer(commandBuffer, &beginInfo) != Result.Success)
+        {
+            throw new Exception("failed to begin recording command buffer!");
+        }
 
-    //         if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != Result.Success) {
-    //             throw new Exception("failed to begin recording command buffer!");
-    //         }
+        var renderPassInfo = new RenderPassBeginInfo
+        {
+            SType = StructureType.RenderPassBeginInfo,
+            RenderPass = renderPass,
+            Framebuffer = swapChainFramebuffers[imageIndex],
+        };
+        renderPassInfo.RenderArea.Offset = new(0, 0);
+        renderPassInfo.RenderArea.Extent = swapChainExtent;
 
-    //         VkRenderPassBeginInfo renderPassInfo{};
-    //         renderPassInfo.SType = StructureType.RENDER_PASS_BEGIN_INFO;
-    //         renderPassInfo.renderPass = renderPass;
-    //         renderPassInfo.framebuffer = swapChainFramebuffers[imageIndex];
-    //         renderPassInfo.renderArea.offset = {0, 0};
-    //         renderPassInfo.renderArea.extent = swapChainExtent;
+        var clearColor = new ClearValue
+        {
+            Color = new ClearColorValue
+            {
+                Float32_0 = 0.0f,
+                Float32_1 = 0.0f,
+                Float32_2 = 0.0f,
+                Float32_3 = 1.0f,
+            },
+        };
+        renderPassInfo.ClearValueCount = 1;
+        renderPassInfo.PClearValues = &clearColor;
 
-    //         VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
-    //         renderPassInfo.clearValueCount = 1;
-    //         renderPassInfo.pClearValues = &clearColor;
+        vk.CmdBeginRenderPass(commandBuffer, &renderPassInfo, SubpassContents.Inline);
 
-    //         vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+        vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Graphics, graphicsPipeline);
 
-    //         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+        var viewport = new Viewport
+        {
+            X = 0.0f,
+            Y = 0.0f,
+            Width = swapChainExtent.Width,
+            Height = swapChainExtent.Height,
+            MinDepth = 0.0f,
+            MaxDepth = 1.0f,
+        };
+        vk.CmdSetViewport(commandBuffer, 0, 1, &viewport);
 
-    //         VkViewport viewport{};
-    //         viewport.x = 0.0f;
-    //         viewport.y = 0.0f;
-    //         viewport.width = static_cast<float>(swapChainExtent.width);
-    //         viewport.height = static_cast<float>(swapChainExtent.height);
-    //         viewport.minDepth = 0.0f;
-    //         viewport.maxDepth = 1.0f;
-    //         vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+        var scissor = new Rect2D { Offset = new(0, 0), Extent = swapChainExtent };
+        vk.CmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-    //         VkRect2D scissor{};
-    //         scissor.offset = {0, 0};
-    //         scissor.extent = swapChainExtent;
-    //         vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+        vk.CmdDraw(commandBuffer, 3, 1, 0, 0);
 
-    //         vkCmdDraw(commandBuffer, 3, 1, 0, 0);
-
-    //         vkCmdEndRenderPass(commandBuffer);
-
-    //         if (vkEndCommandBuffer(commandBuffer) != Result.Success) {
-    //             throw new Exception("failed to record command buffer!");
-    //         }
-    //     }
+        vk.CmdEndRenderPass(commandBuffer);
+        if (vk.EndCommandBuffer(commandBuffer) != Result.Success)
+        {
+            throw new Exception("failed to record command buffer!");
+        }
+    }
 
     void createSyncObjects()
     {
@@ -884,50 +898,63 @@ unsafe class HelloTriangleApplication
         }
     }
 
-    //     void drawFrame() {
-    //         vkWaitForFences(device, 1, &inFlightFence, VK_TRUE, UINT64_MAX);
-    //         vkResetFences(device, 1, &inFlightFence);
+    void drawFrame()
+    {
+        vk.WaitForFences(device, 1, in inFlightFence, true, ulong.MaxValue);
+        vk.ResetFences(device, 1, in inFlightFence);
 
-    //         uint32_t imageIndex;
-    //         vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
+        uint imageIndex;
+        khrSwapchain.AcquireNextImage(
+            device,
+            swapChain,
+            ulong.MaxValue,
+            imageAvailableSemaphore,
+            default,
+            &imageIndex
+        );
 
-    //         vkResetCommandBuffer(commandBuffer, /*VkCommandBufferResetFlagBits*/ 0);
-    //         recordCommandBuffer(commandBuffer, imageIndex);
+        vk.ResetCommandBuffer(
+            commandBuffer, /*VkCommandBufferResetFlagBits*/
+            0
+        );
+        recordCommandBuffer(commandBuffer, imageIndex);
 
-    //         VkSubmitInfo submitInfo{};
-    //         submitInfo.SType = StructureType.SUBMIT_INFO;
+        var waitSemaphores = stackalloc VkSemaphore[] { imageAvailableSemaphore };
+        var waitStages = stackalloc PipelineStageFlags[]
+        {
+            PipelineStageFlags.ColorAttachmentOutputBit,
+        };
+        var signalSemaphores = stackalloc VkSemaphore[] { renderFinishedSemaphore };
+        var cmd = commandBuffer;
+        var submitInfo = new SubmitInfo
+        {
+            SType = StructureType.SubmitInfo,
+            WaitSemaphoreCount = 1,
+            PWaitSemaphores = waitSemaphores,
+            PWaitDstStageMask = waitStages,
+            CommandBufferCount = 1,
+            PCommandBuffers = &cmd,
+            SignalSemaphoreCount = 1,
+            PSignalSemaphores = signalSemaphores,
+        };
+        if (vk.QueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFence) != Result.Success)
+        {
+            throw new Exception("failed to submit draw command buffer!");
+        }
 
-    //         VkSemaphore waitSemaphores[] = {imageAvailableSemaphore};
-    //         VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-    //         submitInfo.waitSemaphoreCount = 1;
-    //         submitInfo.pWaitSemaphores = waitSemaphores;
-    //         submitInfo.pWaitDstStageMask = waitStages;
+        var swapChains = stackalloc SwapchainKHR[] { swapChain };
+        var presentInfo = new PresentInfoKHR
+        {
+            SType = StructureType.PresentInfoKhr,
+            WaitSemaphoreCount = 1,
+            PWaitSemaphores = signalSemaphores,
+            SwapchainCount = 1,
+            PSwapchains = swapChains,
+            PImageIndices = &imageIndex,
+        };
 
-    //         submitInfo.commandBufferCount = 1;
-    //         submitInfo.pCommandBuffers = &commandBuffer;
-
-    //         VkSemaphore signalSemaphores[] = {renderFinishedSemaphore};
-    //         submitInfo.signalSemaphoreCount = 1;
-    //         submitInfo.pSignalSemaphores = signalSemaphores;
-
-    //         if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFence) != Result.Success) {
-    //             throw new Exception("failed to submit draw command buffer!");
-    //         }
-
-    //         VkPresentInfoKHR presentInfo{};
-    //         presentInfo.SType = StructureType.PRESENT_INFO_KHR;
-
-    //         presentInfo.waitSemaphoreCount = 1;
-    //         presentInfo.pWaitSemaphores = signalSemaphores;
-
-    //         VkSwapchainKHR swapChains[] = {swapChain};
-    //         presentInfo.swapchainCount = 1;
-    //         presentInfo.pSwapchains = swapChains;
-
-    //         presentInfo.pImageIndices = &imageIndex;
-
-    //         vkQueuePresentKHR(presentQueue, &presentInfo);
-    //     }
+        khrSwapchain.QueuePresent(presentQueue, &presentInfo);
+    }
 
     ShaderModule createShaderModule(ReadOnlySpan<byte> code)
     {
@@ -1176,24 +1203,6 @@ unsafe class HelloTriangleApplication
         return true;
     }
 
-    //     static std::vector<char> readFile(const std::string& filename) {
-    //         std::ifstream file(filename, std::ios::ate | std::ios::binary);
-
-    //         if (!file.is_open()) {
-    //             throw new Exception("failed to open file!");
-    //         }
-
-    //         size_t fileSize = (size_t) file.tellg();
-    //         std::vector<char> buffer(fileSize);
-
-    //         file.seekg(0);
-    //         file.read(buffer.data(), fileSize);
-
-    //         file.close();
-
-    //         return buffer;
-    //     }
-
     private static uint debugCallback(
         DebugUtilsMessageSeverityFlagsEXT messageSeverity,
         DebugUtilsMessageTypeFlagsEXT messageTypes,
@@ -1204,7 +1213,7 @@ unsafe class HelloTriangleApplication
         var msg = Marshal.PtrToStringAnsi((nint)pCallbackData->PMessage);
         Console.Error.WriteLine($"validation layer: {msg}");
 
-        return 0; //VK_FALSE;
+        return Vk.False;
     }
 }
 

@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup>
+    <Glslc>$(VULKAN_SDK)\Bin\glslc.exe</Glslc>
+    <SpvDir>$(MSBuildProjectDirectory)/shaders/compiled</SpvDir>
+  </PropertyGroup>
+</Project>
