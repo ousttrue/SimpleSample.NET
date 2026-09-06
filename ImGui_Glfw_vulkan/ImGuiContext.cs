@@ -6,7 +6,7 @@ class ImGuiContext : IDisposable
 {
     public ImGuiContext()
     {
-        //     IMGUI_CHECKVERSION();
+        // IMGUI_CHECKVERSION();
         ImGui.CreateContext();
         var io = ImGui.GetIO();
         io.ConfigFlags |= ImGuiConfigFlags.NavEnableKeyboard; // Enable Keyboard Controls

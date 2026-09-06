@@ -65,4 +65,12 @@ unsafe class GlfwWindow : IDisposable
         glfw.GetFramebufferSize(_window, out var fb_width, out var fb_height);
         return (fb_width, fb_height);
     }
+
+    public ByteStringArrayAllocator GetVulkanInstanceExtensions()
+    {
+        var allocator = new ByteStringArrayAllocator();
+        var extensions = glfw.GetRequiredInstanceExtensions(out var extensions_count);
+        allocator.AddSpan(extensions, extensions_count);
+        return allocator;
+    }
 }
