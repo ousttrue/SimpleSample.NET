@@ -19,7 +19,7 @@ class ImGui_ImplVulkanH_Window : IDisposable
     // Input
     bool UseDynamicRendering;
     SurfaceKHR Surface; // Surface created and destroyed by caller.
-    SurfaceFormatKHR SurfaceFormat;
+    public SurfaceFormatKHR SurfaceFormat;
     PresentModeKHR PresentMode; // Ensure we get an error if user doesn't set this.
     AttachmentDescription AttachmentDesc = new AttachmentDescription
     {
@@ -32,7 +32,6 @@ class ImGui_ImplVulkanH_Window : IDisposable
         InitialLayout = ImageLayout.Undefined,
         FinalLayout = ImageLayout.PresentSrcKhr,
     }; // RenderPass creation: main attachment description.
-    public ClearValue ClearValue; // RenderPass creation: clear value when using VK_ATTACHMENT_LOAD_OP_CLEAR.
 
     // Internal
     bool g_SwapChainRebuild = false;
@@ -41,6 +40,7 @@ class ImGui_ImplVulkanH_Window : IDisposable
     public int Height;
     SwapchainKHR Swapchain;
     public RenderPass RenderPass;
+
     // Pipeline Pipeline; // The window pipeline may uses a different VkRenderPass than the one passed in ImGui_ImplVulkan_InitInfo
     public uint FrameIndex; // Current frame being rendered to (0 <= FrameIndex < FrameInFlightCount)
     public uint ImageCount; // Number of simultaneous in-flight frames (returned by vkGetSwapchainImagesKHR, usually derived from min_image_count)
@@ -715,7 +715,7 @@ class ImGui_ImplVulkanH_Window : IDisposable
         }
     }
 
-    public unsafe void FrameRender(ImDrawDataPtr draw_data)
+    public unsafe (uint, Semaphore, Semaphore, CommandBuffer)? BeginRender(ClearValue clearValue)
     {
         var image_acquired_semaphore = FrameSemaphores[(int)SemaphoreIndex].ImageAcquiredSemaphore;
         var render_complete_semaphore = FrameSemaphores[
@@ -735,7 +735,7 @@ class ImGui_ImplVulkanH_Window : IDisposable
             g_SwapChainRebuild = true;
 
         if (err == Result.ErrorOutOfDateKhr)
-            return;
+            return default;
 
         if (err != Result.SuboptimalKhr)
             err.ThrowIfError();
@@ -757,7 +757,6 @@ class ImGui_ImplVulkanH_Window : IDisposable
             vk.BeginCommandBuffer(fd.CommandBuffer, &info).ThrowIfError();
         }
         {
-            var clearValue = ClearValue;
             var info = new RenderPassBeginInfo
             {
                 SType = StructureType.RenderPassBeginInfo,
@@ -772,7 +771,15 @@ class ImGui_ImplVulkanH_Window : IDisposable
             };
             vk.CmdBeginRenderPass(fd.CommandBuffer, &info, SubpassContents.Inline);
         }
+        return (frameIndex, image_acquired_semaphore, render_complete_semaphore, fd.CommandBuffer);
+    }
 
+    public unsafe void EndRender(
+        Semaphore image_acquired_semaphore,
+        Semaphore render_complete_semaphore
+    )
+    {
+        var fd = Frames[(int)FrameIndex];
         //     // Record dear imgui primitives into command buffer
         //     ImGui_ImplVulkan_RenderDrawData(draw_data, fd.CommandBuffer);
 
@@ -795,36 +802,31 @@ class ImGui_ImplVulkanH_Window : IDisposable
             vk.EndCommandBuffer(fd.CommandBuffer).ThrowIfError();
             vk.QueueSubmit(Queue, 1, &info, fd.Fence).ThrowIfError();
         }
-    }
 
-    public unsafe void FramePresent()
-    {
-        if (g_SwapChainRebuild)
+        if (!g_SwapChainRebuild)
         {
-            return;
+            // var render_complete_semaphore = FrameSemaphores[
+            //     (int)SemaphoreIndex
+            // ].RenderCompleteSemaphore;
+            var swapchain = Swapchain;
+            var frameIndex = FrameIndex;
+            var info = new PresentInfoKHR
+            {
+                SType = StructureType.PresentInfoKhr,
+                WaitSemaphoreCount = 1,
+                PWaitSemaphores = &render_complete_semaphore,
+                SwapchainCount = 1,
+                PSwapchains = &swapchain,
+                PImageIndices = &frameIndex,
+            };
+            var err = khrSwapchain.QueuePresent(Queue, &info);
+            if (err == Result.ErrorOutOfDateKhr || err == Result.SuboptimalKhr)
+                g_SwapChainRebuild = true;
+            if (err == Result.ErrorOutOfDateKhr)
+                return;
+            if (err != Result.SuboptimalKhr)
+                err.ThrowIfError();
+            SemaphoreIndex = (SemaphoreIndex + 1) % SemaphoreCount; // Now we can use the next set of semaphores
         }
-
-        var render_complete_semaphore = FrameSemaphores[
-            (int)SemaphoreIndex
-        ].RenderCompleteSemaphore;
-        var swapchain = Swapchain;
-        var frameIndex = FrameIndex;
-        var info = new PresentInfoKHR
-        {
-            SType = StructureType.PresentInfoKhr,
-            WaitSemaphoreCount = 1,
-            PWaitSemaphores = &render_complete_semaphore,
-            SwapchainCount = 1,
-            PSwapchains = &swapchain,
-            PImageIndices = &frameIndex,
-        };
-        var err = khrSwapchain.QueuePresent(Queue, &info);
-        if (err == Result.ErrorOutOfDateKhr || err == Result.SuboptimalKhr)
-            g_SwapChainRebuild = true;
-        if (err == Result.ErrorOutOfDateKhr)
-            return;
-        if (err != Result.SuboptimalKhr)
-            err.ThrowIfError();
-        SemaphoreIndex = (SemaphoreIndex + 1) % SemaphoreCount; // Now we can use the next set of semaphores
     }
 }

@@ -3,6 +3,7 @@
 using System.Numerics;
 using ImGuiNET;
 using Silk.NET.Vulkan;
+using Semaphore = Silk.NET.Vulkan.Semaphore;
 
 static class VkExtensions
 {
@@ -56,7 +57,13 @@ static unsafe class Program
 
         // Setup Platform/Renderer backends
         using var implGlfw = ImGuiImplGlfw.InitForVulkan(glfw_window.Window, true);
-        // using var implVulkan =new ImGuiImplVulkan(vk, init_info);
+        using var implVulkan = new ImGuiImplVulkan(
+            vk,
+            vk_instance.Device,
+            g_MainWindowData.SurfaceFormat.Format,
+            Format.D24UnormS8Uint,
+            g_MainWindowData.ImageCount
+        );
 
         // Load Fonts
         // - If fonts are not explicitly loaded, Dear ImGui will select an embedded font: either AddFontDefaultVector() or AddFontDefaultBitmap().
@@ -76,10 +83,21 @@ static unsafe class Program
         //ImFont* font = io.Fonts.AddFontFromFileTTF("c:\\Windows\\Fonts\\ArialUni.ttf");
         //IM_ASSERT(font != nullptr);
 
-        // WIP DUMMY
         // Build texture atlas
         IntPtr pixels;
-        io.Fonts.GetTexDataAsRGBA32(out pixels, out var width, out var height); // Load as RGBA 32-bit (75% of the memory is wasted, but default font is so small) because it is more likely to be compatible with user's existing shaders. If your ImTextureId represent a higher-level concept than just a GL texture id, consider calling GetTexDataAsAlpha8() instead to save on GPU memory.
+        io.Fonts.GetTexDataAsRGBA32(out pixels, out var font_width, out var font_height); // Load as RGBA 32-bit (75% of the memory is wasted, but default font is so small) because it is more likely to be compatible with user's existing shaders. If your ImTextureId represent a higher-level concept than just a GL texture id, consider calling GetTexDataAsAlpha8() instead to save on GPU memory.
+        // var fontBitmap = ig.GetFontBitmap();
+        using var igFontTexture = new TextureObject(
+            vk,
+            vk_instance.PhysicalDevice,
+            vk_instance.Device,
+            (uint)font_width,
+            (uint)font_height,
+            ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit
+        );
+        igFontTexture.Upload(vk_instance.PhysicalDevice, vk_instance.QueueFamily, pixels);
+        var fontDesc = implVulkan.BindTexture(igFontTexture);
+        implVulkan.SetFontTexture(fontDesc);
 
         // Our state
         bool show_demo_window = true;
@@ -152,18 +170,41 @@ static unsafe class Program
             );
             if (!is_minimized)
             {
-                g_MainWindowData.ClearValue.Color.Float32_0 = clear_color.X * clear_color.W;
-                g_MainWindowData.ClearValue.Color.Float32_1 = clear_color.Y * clear_color.W;
-                g_MainWindowData.ClearValue.Color.Float32_2 = clear_color.Z * clear_color.W;
-                g_MainWindowData.ClearValue.Color.Float32_3 = clear_color.W;
-                g_MainWindowData.FrameRender(draw_data);
-                g_MainWindowData.FramePresent();
+                if (
+                    g_MainWindowData.BeginRender(
+                        new ClearValue
+                        {
+                            Color = new ClearColorValue
+                            {
+                                Float32_0 = clear_color.X * clear_color.W,
+                                Float32_1 = clear_color.Y * clear_color.W,
+                                Float32_2 = clear_color.Z * clear_color.W,
+                                Float32_3 = clear_color.W,
+                            },
+                        }
+                    ) is
+                    (
+                        uint frameIndex,
+                        Semaphore image_acquired_semaphore,
+                        Semaphore render_complete_semaphore,
+                        CommandBuffer commandBuffer
+                    )
+                )
+                {
+                    implVulkan.RenderImDrawData(
+                        vk_instance.PhysicalDevice,
+                        draw_data,
+                        commandBuffer,
+                        frameIndex,
+                        new Extent2D((uint)fb_width, (uint)fb_height)
+                    );
+                    g_MainWindowData.EndRender(image_acquired_semaphore, render_complete_semaphore);
+                }
             }
         }
 
         // Cleanup
         vk.DeviceWaitIdle(vk_instance.Device).ThrowIfError();
-        //     ImGui_ImplVulkan_Shutdown();
 
         return 0;
     }
