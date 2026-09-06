@@ -16,7 +16,8 @@ unsafe class GlfwWindow : IDisposable
         Console.Error.WriteLine($"GLFW Error {error}: {description}");
     }
 
-    private readonly WindowHandle* window;
+    private readonly WindowHandle* _window;
+    public WindowHandle* Window => _window;
 
     public GlfwWindow()
     {
@@ -29,7 +30,7 @@ unsafe class GlfwWindow : IDisposable
         glfw.WindowHint(WindowHintClientApi.ClientApi, ClientApi.NoApi);
         // float main_scale = ImGui_ImplGlfw_GetContentScaleForMonitor(glfwGetPrimaryMonitor()); // Valid on GLFW 3.3+ only
         var main_scale = 1f;
-        window = glfw.CreateWindow(
+        _window = glfw.CreateWindow(
             (int)(1280 * main_scale),
             (int)(800 * main_scale),
             "Dear ImGui GLFW+Vulkan example",
@@ -44,13 +45,13 @@ unsafe class GlfwWindow : IDisposable
 
     public void Dispose()
     {
-        glfw.DestroyWindow(window);
+        glfw.DestroyWindow(_window);
         glfw.Terminate();
     }
 
     public (int, int)? NewFrame()
     {
-        if (glfw.WindowShouldClose(window))
+        if (glfw.WindowShouldClose(_window))
         {
             return default;
         }
@@ -61,7 +62,7 @@ unsafe class GlfwWindow : IDisposable
         // Generally you may always pass all inputs to dear imgui, and hide them from your application based on those two flags.
         glfw.PollEvents();
 
-        glfw.GetFramebufferSize(window, out var fb_width, out var fb_height);
+        glfw.GetFramebufferSize(_window, out var fb_width, out var fb_height);
         return (fb_width, fb_height);
     }
 }

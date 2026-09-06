@@ -2,43 +2,6 @@
 
 static unsafe class Program
 {
-    // // Dear ImGui: standalone example application for Glfw + Vulkan
-
-    // // Learn about Dear ImGui:
-    // // - FAQ                  https://dearimgui.com/faq
-    // // - Getting Started      https://dearimgui.com/getting-started
-    // // - Documentation        https://dearimgui.com/docs (same as your local docs/ folder).
-    // // - Introduction, links and more at the top of imgui.cpp
-
-    // // Important note to the reader who wish to integrate imgui_impl_vulkan.cpp/.h in their own engine/app.
-    // // - Common ImGui_ImplVulkan_XXX functions and structures are used to interface with imgui_impl_vulkan.cpp/.h.
-    // //   You will use those if you want to use this rendering backend in your engine/app.
-    // // - Helper ImGui_ImplVulkanH_XXX functions and structures are only used by this example (main.cpp) and by
-    // //   the backend itself (imgui_impl_vulkan.cpp), but should PROBABLY NOT be used by your own engine/app code.
-    // // Read comments in imgui_impl_vulkan.h.
-
-    // #include "imgui.h"
-    // #include "imgui_impl_glfw.h"
-    // #include "imgui_impl_vulkan.h"
-    // #include <stdio.h>          // printf, fprintf
-    // #include <stdlib.h>         // abort
-    // #define GLFW_INCLUDE_NONE
-    // #define GLFW_INCLUDE_VULKAN
-    // #include <GLFW/glfw3.h>
-
-    // // Volk headers
-    // #ifdef IMGUI_IMPL_VULKAN_USE_VOLK
-    // #define VOLK_IMPLEMENTATION
-    // #include <volk.h>
-    // #endif
-
-    // // [Win32] Our example includes a copy of glfw3.lib pre-compiled with VS2010 to maximize ease of testing and compatibility with old VS compilers.
-    // // To link with VS2010-era libraries, VS2015+ requires linking with legacy_stdio_definitions.lib, which we do using this pragma.
-    // // Your own project should not be affected, as you are likely to link with a newer binary of GLFW that is adequate for your version of Visual Studio.
-    // #if defined(_MSC_VER) && (_MSC_VER >= 1900) && !defined(IMGUI_DISABLE_WIN32_FUNCTIONS)
-    // #pragma comment(lib, "legacy_stdio_definitions")
-    // #endif
-
     // //#define APP_USE_UNLIMITED_FRAME_RATE
     // #ifdef _DEBUG
     // #define APP_USE_VULKAN_DEBUG_REPORT
@@ -348,7 +311,7 @@ static unsafe class Program
     //         check_vk_result(err);
     //     wd->SemaphoreIndex = (wd->SemaphoreIndex + 1) % wd->SemaphoreCount; // Now we can use the next set of semaphores
     // }
-    // Main code
+
     public static int Main()
     {
         using var glfw_window = new GlfwWindow();
@@ -371,26 +334,18 @@ static unsafe class Program
         //     ImGui_ImplVulkanH_Window* wd = &g_MainWindowData;
         //     SetupVulkanWindow(wd, surface, w, h);
 
-        //     // Setup Dear ImGui context
-        //     IMGUI_CHECKVERSION();
-        //     ImGui::CreateContext();
-        //     ImGuiIO& io = ImGui::GetIO(); (void)io;
-        //     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
-        //     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
-
-        //     // Setup Dear ImGui style
-        //     ImGui::StyleColorsDark();
-        //     //ImGui::StyleColorsLight();
+        // Setup Dear ImGui context
+        using var imgui_context = new ImGuiContext();
 
         //     // Setup scaling
-        //     ImGuiStyle& style = ImGui::GetStyle();
+        //     ImGuiStyle& style = ImGui.GetStyle();
         //     style.ScaleAllSizes(main_scale);        // Bake a fixed style scale. (until we have a solution for dynamic style scaling, changing this requires resetting Style + calling this again)
         //     style.FontScaleDpi = main_scale;        // Set initial font scale. (in docking branch: using io.ConfigDpiScaleFonts=true automatically overrides this for every window depending on the current monitor)
 
         //     // Setup Platform/Renderer backends
-        //     ImGui_ImplGlfw_InitForVulkan(window, true);
+        using var implGlfw = ImGuiImplGlfw.InitForVulkan(glfw_window.Window, true);
         //     ImGui_ImplVulkan_InitInfo init_info = {};
-        //     //init_info.ApiVersion = VK_API_VERSION_1_3;              // Pass in your value of VkApplicationInfo::apiVersion, otherwise will default to header version.
+        //     //init_info.ApiVersion = VK_API_VERSION_1_3;              // Pass in your value of VkApplicationInfo.apiVersion, otherwise will default to header version.
         //     init_info.Instance = g_Instance;
         //     init_info.PhysicalDevice = g_PhysicalDevice;
         //     init_info.Device = g_Device;
@@ -410,7 +365,7 @@ static unsafe class Program
         //     // Load Fonts
         //     // - If fonts are not explicitly loaded, Dear ImGui will select an embedded font: either AddFontDefaultVector() or AddFontDefaultBitmap().
         //     //   This selection is based on (style.FontSizeBase * style.FontScaleMain * style.FontScaleDpi) reaching a small threshold.
-        //     // - You can load multiple fonts and use ImGui::PushFont()/PopFont() to select them.
+        //     // - You can load multiple fonts and use ImGui.PushFont()/PopFont() to select them.
         //     // - If a file cannot be loaded, AddFont functions will return a nullptr. Please handle those errors in your code (e.g. use an assertion, display an error and quit).
         //     // - Read 'docs/FONTS.md' for more instructions and details.
         //     // - Use '#define IMGUI_ENABLE_FREETYPE' in your imconfig file to use FreeType for higher quality font rendering.
@@ -453,49 +408,49 @@ static unsafe class Program
 
             //         // Start the Dear ImGui frame
             //         ImGui_ImplVulkan_NewFrame();
-            //         ImGui_ImplGlfw_NewFrame();
-            //         ImGui::NewFrame();
+            implGlfw.NewFrame();
+            //         ImGui.NewFrame();
 
-            //         // 1. Show the big demo window (Most of the sample code is in ImGui::ShowDemoWindow()! You can browse its code to learn more about Dear ImGui!).
+            //         // 1. Show the big demo window (Most of the sample code is in ImGui.ShowDemoWindow()! You can browse its code to learn more about Dear ImGui!).
             //         if (show_demo_window)
-            //             ImGui::ShowDemoWindow(&show_demo_window);
+            //             ImGui.ShowDemoWindow(&show_demo_window);
 
             //         // 2. Show a simple window that we create ourselves. We use a Begin/End pair to create a named window.
             //         {
             //             static float f = 0.0f;
             //             static int counter = 0;
 
-            //             ImGui::Begin("Hello, world!");                          // Create a window called "Hello, world!" and append into it.
+            //             ImGui.Begin("Hello, world!");                          // Create a window called "Hello, world!" and append into it.
 
-            //             ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
-            //             ImGui::Checkbox("Demo Window", &show_demo_window);      // Edit bools storing our window open/close state
-            //             ImGui::Checkbox("Another Window", &show_another_window);
+            //             ImGui.Text("This is some useful text.");               // Display some text (you can use a format strings too)
+            //             ImGui.Checkbox("Demo Window", &show_demo_window);      // Edit bools storing our window open/close state
+            //             ImGui.Checkbox("Another Window", &show_another_window);
 
-            //             ImGui::SliderFloat("float", &f, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
-            //             ImGui::ColorEdit3("clear color", (float*)&clear_color); // Edit 3 floats representing a color
+            //             ImGui.SliderFloat("float", &f, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
+            //             ImGui.ColorEdit3("clear color", (float*)&clear_color); // Edit 3 floats representing a color
 
-            //             if (ImGui::Button("Button"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
+            //             if (ImGui.Button("Button"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
             //                 counter++;
-            //             ImGui::SameLine();
-            //             ImGui::Text("counter = %d", counter);
+            //             ImGui.SameLine();
+            //             ImGui.Text("counter = %d", counter);
 
-            //             ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
-            //             ImGui::End();
+            //             ImGui.Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
+            //             ImGui.End();
             //         }
 
             //         // 3. Show another simple window.
             //         if (show_another_window)
             //         {
-            //             ImGui::Begin("Another Window", &show_another_window);   // Pass a pointer to our bool variable (the window will have a closing button that will clear the bool when clicked)
-            //             ImGui::Text("Hello from another window!");
-            //             if (ImGui::Button("Close Me"))
+            //             ImGui.Begin("Another Window", &show_another_window);   // Pass a pointer to our bool variable (the window will have a closing button that will clear the bool when clicked)
+            //             ImGui.Text("Hello from another window!");
+            //             if (ImGui.Button("Close Me"))
             //                 show_another_window = false;
-            //             ImGui::End();
+            //             ImGui.End();
             //         }
 
             //         // Rendering
-            //         ImGui::Render();
-            //         ImDrawData* draw_data = ImGui::GetDrawData();
+            //         ImGui.Render();
+            //         ImDrawData* draw_data = ImGui.GetDrawData();
             //         const bool is_minimized = (draw_data->DisplaySize.x <= 0.0f || draw_data->DisplaySize.y <= 0.0f);
             //         if (!is_minimized)
             //         {
@@ -512,8 +467,6 @@ static unsafe class Program
         //     err = vkDeviceWaitIdle(g_Device);
         //     check_vk_result(err);
         //     ImGui_ImplVulkan_Shutdown();
-        //     ImGui_ImplGlfw_Shutdown();
-        //     ImGui::DestroyContext();
 
         //     CleanupVulkanWindow(&g_MainWindowData);
         //     CleanupVulkan();
