@@ -5,6 +5,17 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "ImGui_Glfw_vulkan",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build",
+            "program": "${workspaceFolder}/ImGui_Glfw_vulkan/bin/Debug/net10.0/ImGui_Glfw_vulkan.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "stopAtEntry": false,
+            "console": "internalConsole"
+        },
+        {
             "name": "ImGui_Glfw_opengl3",
             "type": "coreclr",
             "request": "launch",

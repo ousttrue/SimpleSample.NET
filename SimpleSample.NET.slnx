@@ -1,5 +1,6 @@
 <Solution>
   <Project Path="Glfw_GettingStarted/Glfw_GettingStarted.csproj" />
   <Project Path="ImGui_Glfw_opengl3/ImGui_Glfw_opengl3.csproj" />
+  <Project Path="ImGui_Glfw_vulkan/ImGui_Glfw_vulkan.csproj" />
   <Project Path="VkHelloTriangle/VkHelloTriangle.csproj" />
 </Solution>

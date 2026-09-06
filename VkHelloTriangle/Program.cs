@@ -11,7 +11,7 @@ using VkImage = Silk.NET.Vulkan.Image;
 using VkQueue = Silk.NET.Vulkan.Queue;
 using VkSemaphore = Silk.NET.Vulkan.Semaphore;
 
-unsafe class ByteStringArrayAllocator : IDisposable, IEnumerable
+public unsafe class ByteStringArrayAllocator : IDisposable, IEnumerable
 {
     List<string> _list = [];
     byte** _array;

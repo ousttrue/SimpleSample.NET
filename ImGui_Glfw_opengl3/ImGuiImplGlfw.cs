@@ -521,13 +521,13 @@ public unsafe class ImGuiImplGlfw : IDisposable
 
     public static ImGuiImplGlfw InitForOpenGL(WindowHandle* window, bool install_callbacks)
     {
-        return new ImGuiImplGlfw(window, install_callbacks, GlfwClientApi.OpenGL);
+        return new(window, install_callbacks, GlfwClientApi.OpenGL);
     }
 
-    // bool ImGui_ImplGlfw_InitForVulkan(WindowHandle* window, bool install_callbacks)
-    // {
-    //     return ImGui_ImplGlfw_Init(window, install_callbacks, GlfwClientApi_Vulkan);
-    // }
+    public static ImGuiImplGlfw InitForVulkan(WindowHandle* window, bool install_callbacks)
+    {
+        return new(window, install_callbacks, GlfwClientApi.Vulkan);
+    }
 
     // bool ImGui_ImplGlfw_InitForOther(WindowHandle* window, bool install_callbacks)
     // {
