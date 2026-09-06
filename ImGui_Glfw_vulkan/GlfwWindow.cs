@@ -1,10 +1,12 @@
 // https://github.com/ocornut/imgui/blob/master/examples/example_glfw_vulkan/main.cpp
 
+using Silk.NET.Core.Native;
 using Silk.NET.GLFW;
+using Silk.NET.Vulkan;
 
 unsafe class GlfwWindow : IDisposable
 {
-    static readonly Glfw glfw;
+    public static readonly Glfw glfw;
 
     static GlfwWindow()
     {
@@ -72,5 +74,29 @@ unsafe class GlfwWindow : IDisposable
         var extensions = glfw.GetRequiredInstanceExtensions(out var extensions_count);
         allocator.AddSpan(extensions, extensions_count);
         return allocator;
+    }
+
+    public Result CreateSurface(Instance instance, out SurfaceKHR surface)
+    {
+        SurfaceKHR _surface = default;
+        var err = glfw.CreateWindowSurface(
+            new VkHandle(instance.Handle),
+            _window,
+            default,
+            (VkNonDispatchableHandle*)&_surface
+        );
+        surface = _surface;
+        return (Result)err;
+    }
+
+    public (int, int) GetFramebufferSize()
+    {
+        glfw.GetFramebufferSize(_window, out var w, out var h);
+        return (w, h);
+    }
+
+    public bool IsIconified()
+    {
+        return glfw.GetWindowAttrib(_window, WindowAttributeGetter.Iconified);
     }
 }

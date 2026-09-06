@@ -37,14 +37,14 @@ unsafe class VulkanInstanceAndDevice : IDisposable
     static PhysicalDevice ImGui_ImplVulkanH_SelectPhysicalDevice(Vk vk, Instance instance)
     {
         uint gpu_count;
-        vk.EnumeratePhysicalDevices(instance, &gpu_count, null).Check();
+        vk.EnumeratePhysicalDevices(instance, &gpu_count, null).ThrowIfError();
         if (gpu_count == 0)
         {
             throw new Exception("no gpu");
         }
 
         var gpus = stackalloc PhysicalDevice[(int)gpu_count];
-        vk.EnumeratePhysicalDevices(instance, &gpu_count, gpus).Check();
+        vk.EnumeratePhysicalDevices(instance, &gpu_count, gpus).ThrowIfError();
 
         // If a number >1 of GPUs got reported, find discrete GPU if present, or use first one available. This covers
         // most common cases (multi-gpu/integrated+dedicated graphics). Handling more complicated setups (multiple
@@ -79,22 +79,21 @@ unsafe class VulkanInstanceAndDevice : IDisposable
 
     private readonly Vk vk;
 
-    private readonly AllocationCallbacks* g_Allocator = default;
-    private readonly Instance g_Instance;
+    public readonly Instance Instance;
 
     private readonly ExtDebugReport extDebugReport;
     private readonly DebugReportCallbackEXT g_DebugReport;
 
-    private readonly PhysicalDevice g_PhysicalDevice;
-    private readonly uint g_QueueFamily = uint.MaxValue;
-    private readonly Queue g_Queue;
+    public readonly PhysicalDevice PhysicalDevice;
+    public readonly uint QueueFamily = uint.MaxValue;
+    public readonly Queue Queue;
 
-    private readonly Device g_Device;
+    public readonly Device Device;
 
     // Backend uses a small number of descriptors per font atlas + as many as additional calls done to ImGui_ImplVulkan_AddTexture().
     const uint IMGUI_IMPL_VULKAN_MINIMUM_SAMPLED_IMAGE_POOL_SIZE = 8; // Minimum per atlas
-    const uint IMGUI_IMPL_VULKAN_MINIMUM_SAMPLER_POOL_SIZE = 2; // Minimum for linear + nearest
-    private DescriptorPool g_DescriptorPool = default;
+    public const uint IMGUI_IMPL_VULKAN_MINIMUM_SAMPLER_POOL_SIZE = 2; // Minimum for linear + nearest
+    public readonly DescriptorPool DescriptorPool;
 
     public VulkanInstanceAndDevice(Vk _vk, ByteStringArrayAllocator instance_extensions)
     {
@@ -109,7 +108,7 @@ unsafe class VulkanInstanceAndDevice : IDisposable
             vk.EnumerateInstanceExtensionProperties((byte*)null, &properties_count, null);
             var properties = stackalloc ExtensionProperties[(int)properties_count];
             vk.EnumerateInstanceExtensionProperties((byte*)null, &properties_count, properties)
-                .Check();
+                .ThrowIfError();
 
             // Enable required extensions
             if (
@@ -135,9 +134,9 @@ unsafe class VulkanInstanceAndDevice : IDisposable
             // Create Vulkan Instance
             (create_info.EnabledExtensionCount, create_info.PpEnabledExtensionNames) =
                 instance_extensions;
-            vk.CreateInstance(&create_info, g_Allocator, out g_Instance).Check();
+            vk.CreateInstance(&create_info, default, out Instance).ThrowIfError();
 
-            if (!vk.TryGetInstanceExtension(g_Instance, out extDebugReport))
+            if (!vk.TryGetInstanceExtension(Instance, out extDebugReport))
             {
                 throw new Exception("TryGetInstanceExtension<ExtDebugReport>");
             }
@@ -154,19 +153,19 @@ unsafe class VulkanInstanceAndDevice : IDisposable
             };
             extDebugReport
                 .CreateDebugReportCallback(
-                    g_Instance,
+                    Instance,
                     &debug_report_ci,
-                    g_Allocator,
+                    default,
                     out g_DebugReport
                 )
-                .Check();
+                .ThrowIfError();
         }
 
         // Select Physical Device (GPU)
-        g_PhysicalDevice = ImGui_ImplVulkanH_SelectPhysicalDevice(vk, g_Instance);
+        PhysicalDevice = ImGui_ImplVulkanH_SelectPhysicalDevice(vk, Instance);
 
         // Select graphics queue family
-        g_QueueFamily = ImGui_ImplVulkanH_SelectQueueFamilyIndex(vk, g_PhysicalDevice);
+        QueueFamily = ImGui_ImplVulkanH_SelectQueueFamilyIndex(vk, PhysicalDevice);
 
         // Create Logical Device (with 1 queue)
         {
@@ -175,14 +174,14 @@ unsafe class VulkanInstanceAndDevice : IDisposable
             // Enumerate physical device extension
             uint properties_count;
             vk.EnumerateDeviceExtensionProperties(
-                g_PhysicalDevice,
+                PhysicalDevice,
                 (byte*)null,
                 &properties_count,
                 null
             );
             var properties = stackalloc ExtensionProperties[(int)properties_count];
             vk.EnumerateDeviceExtensionProperties(
-                g_PhysicalDevice,
+                PhysicalDevice,
                 (byte*)null,
                 &properties_count,
                 properties
@@ -195,7 +194,7 @@ unsafe class VulkanInstanceAndDevice : IDisposable
             var queue_priority = stackalloc float[] { 1.0f };
             var queue_info = stackalloc DeviceQueueCreateInfo[1];
             queue_info[0].SType = StructureType.DeviceQueueCreateInfo;
-            queue_info[0].QueueFamilyIndex = g_QueueFamily;
+            queue_info[0].QueueFamilyIndex = QueueFamily;
             queue_info[0].QueueCount = 1;
             queue_info[0].PQueuePriorities = queue_priority;
             var create_info = new DeviceCreateInfo
@@ -207,8 +206,8 @@ unsafe class VulkanInstanceAndDevice : IDisposable
             (create_info.EnabledExtensionCount, create_info.PpEnabledExtensionNames) =
                 device_extensions;
 
-            vk.CreateDevice(g_PhysicalDevice, &create_info, g_Allocator, out g_Device).Check();
-            vk.GetDeviceQueue(g_Device, g_QueueFamily, 0, out g_Queue);
+            vk.CreateDevice(PhysicalDevice, &create_info, default, out Device).ThrowIfError();
+            vk.GetDeviceQueue(Device, QueueFamily, 0, out Queue);
         }
 
         // Create Descriptor Pool
@@ -237,19 +236,19 @@ unsafe class VulkanInstanceAndDevice : IDisposable
                 pool_info.MaxSets += pool_sizes[i].DescriptorCount;
             pool_info.PoolSizeCount = 2;
             pool_info.PPoolSizes = pool_sizes;
-            vk.CreateDescriptorPool(g_Device, &pool_info, g_Allocator, out g_DescriptorPool)
-                .Check();
+            vk.CreateDescriptorPool(Device, &pool_info, default, out DescriptorPool)
+                .ThrowIfError();
         }
     }
 
     public void Dispose()
     {
-        vk.DestroyDescriptorPool(g_Device, g_DescriptorPool, g_Allocator);
+        vk.DestroyDescriptorPool(Device, DescriptorPool, default);
 
         // Remove the debug report callback
-        extDebugReport.DestroyDebugReportCallback(g_Instance, g_DebugReport, g_Allocator);
+        extDebugReport.DestroyDebugReportCallback(Instance, g_DebugReport, default);
 
-        vk.DestroyDevice(g_Device, g_Allocator);
-        vk.DestroyInstance(g_Instance, g_Allocator);
+        vk.DestroyDevice(Device, default);
+        vk.DestroyInstance(Instance, default);
     }
 }

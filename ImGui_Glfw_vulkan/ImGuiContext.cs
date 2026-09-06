@@ -1,5 +1,3 @@
-// https://github.com/ocornut/imgui/blob/master/examples/example_glfw_vulkan/main.cpp
-
 using ImGuiNET;
 
 class ImGuiContext : IDisposable

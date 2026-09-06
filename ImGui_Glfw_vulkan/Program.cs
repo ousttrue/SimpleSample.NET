@@ -1,10 +1,12 @@
 ﻿// https://github.com/ocornut/imgui/blob/master/examples/example_glfw_vulkan/main.cpp
 
+using System.Numerics;
+using ImGuiNET;
 using Silk.NET.Vulkan;
 
 static class VkExtensions
 {
-    public static void Check(this Result err)
+    public static void ThrowIfError(this Result err)
     {
         if (err == Result.Success)
             return;
@@ -16,210 +18,75 @@ static class VkExtensions
 
 static unsafe class Program
 {
-    //#define APP_USE_UNLIMITED_FRAME_RATE
-
-    // Data
-    // static VkPipelineCache          g_PipelineCache = VK_NULL_HANDLE;
-
-    // static ImGui_ImplVulkanH_Window g_MainWindowData;
-    // static uint32_t                 g_MinImageCount = 2;
-    // static bool                     g_SwapChainRebuild = false;
-
-    // // All the ImGui_ImplVulkanH_XXX structures/functions are optional helpers used by the demo.
-    // // Your real engine/app may not use them.
-    // static void SetupVulkanWindow(ImGui_ImplVulkanH_Window* wd, VkSurfaceKHR surface, int width, int height)
-    // {
-    //     // Check for WSI support
-    //     VkBool32 res;
-    //     vkGetPhysicalDeviceSurfaceSupportKHR(g_PhysicalDevice, g_QueueFamily, surface, &res);
-    //     if (res != VK_TRUE)
-    //     {
-    //         fprintf(stderr, "Error no WSI support on physical device 0\n");
-    //         exit(-1);
-    //     }
-
-    //     // Select Surface Format
-    //     const VkFormat requestSurfaceImageFormat[] = { VK_FORMAT_B8G8R8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_B8G8R8_UNORM, VK_FORMAT_R8G8B8_UNORM };
-    //     const VkColorSpaceKHR requestSurfaceColorSpace = VK_COLORSPACE_SRGB_NONLINEAR_KHR;
-    //     wd->Surface = surface;
-    //     wd->SurfaceFormat = ImGui_ImplVulkanH_SelectSurfaceFormat(g_PhysicalDevice, wd->Surface, requestSurfaceImageFormat, (size_t)IM_COUNTOF(requestSurfaceImageFormat), requestSurfaceColorSpace);
-
-    //     // Select Present Mode
-    // #ifdef APP_USE_UNLIMITED_FRAME_RATE
-    //     VkPresentModeKHR present_modes[] = { VK_PRESENT_MODE_MAILBOX_KHR, VK_PRESENT_MODE_IMMEDIATE_KHR, VK_PRESENT_MODE_FIFO_KHR };
-    // #else
-    //     VkPresentModeKHR present_modes[] = { VK_PRESENT_MODE_FIFO_KHR };
-    // #endif
-    //     wd->PresentMode = ImGui_ImplVulkanH_SelectPresentMode(g_PhysicalDevice, wd->Surface, &present_modes[0], IM_COUNTOF(present_modes));
-    //     //printf("[vulkan] Selected PresentMode = %d\n", wd->PresentMode);
-
-    //     // Create SwapChain, RenderPass, Framebuffer, etc.
-    //     IM_ASSERT(g_MinImageCount >= 2);
-    //     ImGui_ImplVulkanH_CreateOrResizeWindow(g_Instance, g_PhysicalDevice, g_Device, wd, g_QueueFamily, g_Allocator, width, height, g_MinImageCount, 0);
-    // }
-
-    // static void CleanupVulkanWindow(ImGui_ImplVulkanH_Window* wd)
-    // {
-    //     ImGui_ImplVulkanH_DestroyWindow(g_Instance, g_Device, wd, g_Allocator);
-    //     vkDestroySurfaceKHR(g_Instance, wd->Surface, g_Allocator);
-    // }
-
-    // static void FrameRender(ImGui_ImplVulkanH_Window* wd, ImDrawData* draw_data)
-    // {
-    //     VkSemaphore image_acquired_semaphore  = wd->FrameSemaphores[wd->SemaphoreIndex].ImageAcquiredSemaphore;
-    //     VkSemaphore render_complete_semaphore = wd->FrameSemaphores[wd->SemaphoreIndex].RenderCompleteSemaphore;
-    //     VkResult err = vkAcquireNextImageKHR(g_Device, wd->Swapchain, UINT64_MAX, image_acquired_semaphore, VK_NULL_HANDLE, &wd->FrameIndex);
-    //     if (err == VK_ERROR_OUT_OF_DATE_KHR || err == VK_SUBOPTIMAL_KHR)
-    //         g_SwapChainRebuild = true;
-    //     if (err == VK_ERROR_OUT_OF_DATE_KHR)
-    //         return;
-    //     if (err != VK_SUBOPTIMAL_KHR)
-    //         check_vk_result(err);
-
-    //     ImGui_ImplVulkanH_Frame* fd = &wd->Frames[wd->FrameIndex];
-    //     {
-    //         err = vkWaitForFences(g_Device, 1, &fd->Fence, VK_TRUE, UINT64_MAX);    // wait indefinitely instead of periodically checking
-    //         check_vk_result(err);
-
-    //         err = vkResetFences(g_Device, 1, &fd->Fence);
-    //         check_vk_result(err);
-    //     }
-    //     {
-    //         err = vkResetCommandPool(g_Device, fd->CommandPool, 0);
-    //         check_vk_result(err);
-    //         VkCommandBufferBeginInfo info = {};
-    //         info.SType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    //         info.flags |= VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    //         err = vkBeginCommandBuffer(fd->CommandBuffer, &info);
-    //         check_vk_result(err);
-    //     }
-    //     {
-    //         VkRenderPassBeginInfo info = {};
-    //         info.SType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    //         info.renderPass = wd->RenderPass;
-    //         info.framebuffer = fd->Framebuffer;
-    //         info.renderArea.extent.width = wd->Width;
-    //         info.renderArea.extent.height = wd->Height;
-    //         info.clearValueCount = 1;
-    //         info.pClearValues = &wd->ClearValue;
-    //         vkCmdBeginRenderPass(fd->CommandBuffer, &info, VK_SUBPASS_CONTENTS_INLINE);
-    //     }
-
-    //     // Record dear imgui primitives into command buffer
-    //     ImGui_ImplVulkan_RenderDrawData(draw_data, fd->CommandBuffer);
-
-    //     // Submit command buffer
-    //     vkCmdEndRenderPass(fd->CommandBuffer);
-    //     {
-    //         VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    //         VkSubmitInfo info = {};
-    //         info.SType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    //         info.waitSemaphoreCount = 1;
-    //         info.pWaitSemaphores = &image_acquired_semaphore;
-    //         info.pWaitDstStageMask = &wait_stage;
-    //         info.commandBufferCount = 1;
-    //         info.pCommandBuffers = &fd->CommandBuffer;
-    //         info.signalSemaphoreCount = 1;
-    //         info.pSignalSemaphores = &render_complete_semaphore;
-
-    //         err = vkEndCommandBuffer(fd->CommandBuffer);
-    //         check_vk_result(err);
-    //         err = vkQueueSubmit(g_Queue, 1, &info, fd->Fence);
-    //         check_vk_result(err);
-    //     }
-    // }
-
-    // static void FramePresent(ImGui_ImplVulkanH_Window* wd)
-    // {
-    //     if (g_SwapChainRebuild)
-    //         return;
-    //     VkSemaphore render_complete_semaphore = wd->FrameSemaphores[wd->SemaphoreIndex].RenderCompleteSemaphore;
-    //     VkPresentInfoKHR info = {};
-    //     info.SType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-    //     info.waitSemaphoreCount = 1;
-    //     info.pWaitSemaphores = &render_complete_semaphore;
-    //     info.swapchainCount = 1;
-    //     info.pSwapchains = &wd->Swapchain;
-    //     info.pImageIndices = &wd->FrameIndex;
-    //     VkResult err = vkQueuePresentKHR(g_Queue, &info);
-    //     if (err == VK_ERROR_OUT_OF_DATE_KHR || err == VK_SUBOPTIMAL_KHR)
-    //         g_SwapChainRebuild = true;
-    //     if (err == VK_ERROR_OUT_OF_DATE_KHR)
-    //         return;
-    //     if (err != VK_SUBOPTIMAL_KHR)
-    //         check_vk_result(err);
-    //     wd->SemaphoreIndex = (wd->SemaphoreIndex + 1) % wd->SemaphoreCount; // Now we can use the next set of semaphores
-    // }
-
     public static int Main()
     {
+        uint g_MinImageCount = 2;
+
         using var glfw_window = new GlfwWindow();
         var glfw_extensions = glfw_window.GetVulkanInstanceExtensions();
 
         var vk = Vk.GetApi() ?? throw new NullReferenceException();
         using var vk_instance = new VulkanInstanceAndDevice(vk, glfw_extensions);
 
-        //     // Create Window Surface
-        //     VkSurfaceKHR surface;
-        //     VkResult err = glfwCreateWindowSurface(g_Instance, window, g_Allocator, &surface);
-        //     check_vk_result(err);
+        // Create Window Surface
+        glfw_window.CreateSurface(vk_instance.Instance, out var surface).ThrowIfError();
 
-        //     // Create Framebuffers
-        //     int w, h;
-        //     glfwGetFramebufferSize(window, &w, &h);
-        //     ImGui_ImplVulkanH_Window* wd = &g_MainWindowData;
-        //     SetupVulkanWindow(wd, surface, w, h);
+        // Create Framebuffers
+        var (w, h) = glfw_window.GetFramebufferSize();
+        using var g_MainWindowData = new ImGui_ImplVulkanH_Window(
+            vk,
+            vk_instance.Instance,
+            vk_instance.PhysicalDevice,
+            vk_instance.QueueFamily,
+            vk_instance.Device,
+            surface,
+            w,
+            h,
+            g_MinImageCount
+        );
 
         // Setup Dear ImGui context
         using var imgui_context = new ImGuiContext();
+        var io = ImGui.GetIO();
 
-        //     // Setup scaling
+        // Setup scaling
         //     ImGuiStyle& style = ImGui.GetStyle();
         //     style.ScaleAllSizes(main_scale);        // Bake a fixed style scale. (until we have a solution for dynamic style scaling, changing this requires resetting Style + calling this again)
         //     style.FontScaleDpi = main_scale;        // Set initial font scale. (in docking branch: using io.ConfigDpiScaleFonts=true automatically overrides this for every window depending on the current monitor)
 
-        //     // Setup Platform/Renderer backends
+        // Setup Platform/Renderer backends
         using var implGlfw = ImGuiImplGlfw.InitForVulkan(glfw_window.Window, true);
-        //     ImGui_ImplVulkan_InitInfo init_info = {};
-        //     //init_info.ApiVersion = VK_API_VERSION_1_3;              // Pass in your value of VkApplicationInfo.apiVersion, otherwise will default to header version.
-        //     init_info.Instance = g_Instance;
-        //     init_info.PhysicalDevice = g_PhysicalDevice;
-        //     init_info.Device = g_Device;
-        //     init_info.QueueFamily = g_QueueFamily;
-        //     init_info.Queue = g_Queue;
-        //     init_info.PipelineCache = g_PipelineCache;
-        //     init_info.DescriptorPool = g_DescriptorPool;
-        //     init_info.MinImageCount = g_MinImageCount;
-        //     init_info.ImageCount = wd->ImageCount;
-        //     init_info.Allocator = g_Allocator;
-        //     init_info.PipelineInfoMain.RenderPass = wd->RenderPass;
-        //     init_info.PipelineInfoMain.Subpass = 0;
-        //     init_info.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
-        //     init_info.CheckVkResultFn = check_vk_result;
-        //     ImGui_ImplVulkan_Init(&init_info);
+        // using var implVulkan =new ImGuiImplVulkan(vk, init_info);
 
-        //     // Load Fonts
-        //     // - If fonts are not explicitly loaded, Dear ImGui will select an embedded font: either AddFontDefaultVector() or AddFontDefaultBitmap().
-        //     //   This selection is based on (style.FontSizeBase * style.FontScaleMain * style.FontScaleDpi) reaching a small threshold.
-        //     // - You can load multiple fonts and use ImGui.PushFont()/PopFont() to select them.
-        //     // - If a file cannot be loaded, AddFont functions will return a nullptr. Please handle those errors in your code (e.g. use an assertion, display an error and quit).
-        //     // - Read 'docs/FONTS.md' for more instructions and details.
-        //     // - Use '#define IMGUI_ENABLE_FREETYPE' in your imconfig file to use FreeType for higher quality font rendering.
-        //     // - Remember that in C/C++ if you want to include a backslash \ in a string literal you need to write a double backslash \\ !
-        //     //style.FontSizeBase = 20.0f;
-        //     //io.Fonts->AddFontDefaultVector();
-        //     //io.Fonts->AddFontDefaultBitmap();
-        //     //io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\segoeui.ttf");
-        //     //io.Fonts->AddFontFromFileTTF("../../misc/fonts/DroidSans.ttf");
-        //     //io.Fonts->AddFontFromFileTTF("../../misc/fonts/Roboto-Medium.ttf");
-        //     //io.Fonts->AddFontFromFileTTF("../../misc/fonts/Cousine-Regular.ttf");
-        //     //ImFont* font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\ArialUni.ttf");
-        //     //IM_ASSERT(font != nullptr);
+        // Load Fonts
+        // - If fonts are not explicitly loaded, Dear ImGui will select an embedded font: either AddFontDefaultVector() or AddFontDefaultBitmap().
+        //   This selection is based on (style.FontSizeBase * style.FontScaleMain * style.FontScaleDpi) reaching a small threshold.
+        // - You can load multiple fonts and use ImGui.PushFont()/PopFont() to select them.
+        // - If a file cannot be loaded, AddFont functions will return a nullptr. Please handle those errors in your code (e.g. use an assertion, display an error and quit).
+        // - Read 'docs/FONTS.md' for more instructions and details.
+        // - Use '#define IMGUI_ENABLE_FREETYPE' in your imconfig file to use FreeType for higher quality font rendering.
+        // - Remember that in C/C++ if you want to include a backslash \ in a string literal you need to write a double backslash \\ !
+        //style.FontSizeBase = 20.0f;
+        //io.Fonts.AddFontDefaultVector();
+        //io.Fonts.AddFontDefaultBitmap();
+        //io.Fonts.AddFontFromFileTTF("c:\\Windows\\Fonts\\segoeui.ttf");
+        //io.Fonts.AddFontFromFileTTF("../../misc/fonts/DroidSans.ttf");
+        //io.Fonts.AddFontFromFileTTF("../../misc/fonts/Roboto-Medium.ttf");
+        //io.Fonts.AddFontFromFileTTF("../../misc/fonts/Cousine-Regular.ttf");
+        //ImFont* font = io.Fonts.AddFontFromFileTTF("c:\\Windows\\Fonts\\ArialUni.ttf");
+        //IM_ASSERT(font != nullptr);
 
-        //     // Our state
-        //     bool show_demo_window = true;
-        //     bool show_another_window = false;
-        //     ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
+        // WIP DUMMY
+        // Build texture atlas
+        IntPtr pixels;
+        io.Fonts.GetTexDataAsRGBA32(out pixels, out var width, out var height); // Load as RGBA 32-bit (75% of the memory is wasted, but default font is so small) because it is more likely to be compatible with user's existing shaders. If your ImTextureId represent a higher-level concept than just a GL texture id, consider calling GetTexDataAsAlpha8() instead to save on GPU memory.
+
+        // Our state
+        bool show_demo_window = true;
+        bool show_another_window = false;
+        var clear_color = new Vector4(0.45f, 0.55f, 0.60f, 1.00f);
+        float f = 0.0f;
+        int counter = 0;
 
         // Main loop
         while (true)
@@ -229,83 +96,74 @@ static unsafe class Program
                 break;
             }
             // Resize swap chain?
-            //         if (fb_width > 0 && fb_height > 0 && (g_SwapChainRebuild || g_MainWindowData.Width != fb_width || g_MainWindowData.Height != fb_height))
-            //         {
-            //             ImGui_ImplVulkan_SetMinImageCount(g_MinImageCount);
-            //             ImGui_ImplVulkanH_CreateOrResizeWindow(g_Instance, g_PhysicalDevice, g_Device, wd, g_QueueFamily, g_Allocator, fb_width, fb_height, g_MinImageCount, 0);
-            //             g_MainWindowData.FrameIndex = 0;
-            //             g_SwapChainRebuild = false;
-            //         }
-            //         if (glfwGetWindowAttrib(window, GLFW_ICONIFIED) != 0)
-            //         {
-            //             ImGui_ImplGlfw_Sleep(10);
-            //             continue;
-            //         }
+            g_MainWindowData.RecreateIfResized(fb_width, fb_height, g_MinImageCount);
+            if (glfw_window.IsIconified())
+            {
+                Thread.Sleep(10);
+                continue;
+            }
 
-            //         // Start the Dear ImGui frame
+            // Start the Dear ImGui frame
             //         ImGui_ImplVulkan_NewFrame();
             implGlfw.NewFrame();
-            //         ImGui.NewFrame();
+            ImGui.NewFrame();
 
-            //         // 1. Show the big demo window (Most of the sample code is in ImGui.ShowDemoWindow()! You can browse its code to learn more about Dear ImGui!).
-            //         if (show_demo_window)
-            //             ImGui.ShowDemoWindow(&show_demo_window);
+            // 1. Show the big demo window (Most of the sample code is in ImGui.ShowDemoWindow()! You can browse its code to learn more about Dear ImGui!).
+            if (show_demo_window)
+                ImGui.ShowDemoWindow(ref show_demo_window);
 
-            //         // 2. Show a simple window that we create ourselves. We use a Begin/End pair to create a named window.
-            //         {
-            //             static float f = 0.0f;
-            //             static int counter = 0;
+            // 2. Show a simple window that we create ourselves. We use a Begin/End pair to create a named window.
+            {
+                ImGui.Begin("Hello, world!"); // Create a window called "Hello, world!" and append into it.
 
-            //             ImGui.Begin("Hello, world!");                          // Create a window called "Hello, world!" and append into it.
+                ImGui.Text("This is some useful text."); // Display some text (you can use a format strings too)
+                ImGui.Checkbox("Demo Window", ref show_demo_window); // Edit bools storing our window open/close state
+                ImGui.Checkbox("Another Window", ref show_another_window);
 
-            //             ImGui.Text("This is some useful text.");               // Display some text (you can use a format strings too)
-            //             ImGui.Checkbox("Demo Window", &show_demo_window);      // Edit bools storing our window open/close state
-            //             ImGui.Checkbox("Another Window", &show_another_window);
+                ImGui.SliderFloat("float", ref f, 0.0f, 1.0f); // Edit 1 float using a slider from 0.0f to 1.0f
+                ImGui.ColorEdit4("clear color", ref clear_color); // Edit 3 floats representing a color
 
-            //             ImGui.SliderFloat("float", &f, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
-            //             ImGui.ColorEdit3("clear color", (float*)&clear_color); // Edit 3 floats representing a color
+                if (ImGui.Button("Button")) // Buttons return true when clicked (most widgets return true when edited/activated)
+                    counter++;
+                ImGui.SameLine();
+                ImGui.Text($"counter = {counter}");
 
-            //             if (ImGui.Button("Button"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
-            //                 counter++;
-            //             ImGui.SameLine();
-            //             ImGui.Text("counter = %d", counter);
+                ImGui.Text(
+                    $"Application average {1000.0f / io.Framerate:F3} ms/frame ({io.Framerate:F1} FPS)"
+                );
+                ImGui.End();
+            }
 
-            //             ImGui.Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
-            //             ImGui.End();
-            //         }
+            // 3. Show another simple window.
+            if (show_another_window)
+            {
+                ImGui.Begin("Another Window", ref show_another_window); // Pass a pointer to our bool variable (the window will have a closing button that will clear the bool when clicked)
+                ImGui.Text("Hello from another window!");
+                if (ImGui.Button("Close Me"))
+                    show_another_window = false;
+                ImGui.End();
+            }
 
-            //         // 3. Show another simple window.
-            //         if (show_another_window)
-            //         {
-            //             ImGui.Begin("Another Window", &show_another_window);   // Pass a pointer to our bool variable (the window will have a closing button that will clear the bool when clicked)
-            //             ImGui.Text("Hello from another window!");
-            //             if (ImGui.Button("Close Me"))
-            //                 show_another_window = false;
-            //             ImGui.End();
-            //         }
-
-            //         // Rendering
-            //         ImGui.Render();
-            //         ImDrawData* draw_data = ImGui.GetDrawData();
-            //         const bool is_minimized = (draw_data->DisplaySize.x <= 0.0f || draw_data->DisplaySize.y <= 0.0f);
-            //         if (!is_minimized)
-            //         {
-            //             wd->ClearValue.color.float32[0] = clear_color.x * clear_color.w;
-            //             wd->ClearValue.color.float32[1] = clear_color.y * clear_color.w;
-            //             wd->ClearValue.color.float32[2] = clear_color.z * clear_color.w;
-            //             wd->ClearValue.color.float32[3] = clear_color.w;
-            //             FrameRender(wd, draw_data);
-            //             FramePresent(wd);
-            //         }
+            // Rendering
+            ImGui.Render();
+            var draw_data = ImGui.GetDrawData();
+            bool is_minimized = (
+                draw_data.DisplaySize.X <= 0.0f || draw_data.DisplaySize.Y <= 0.0f
+            );
+            if (!is_minimized)
+            {
+                g_MainWindowData.ClearValue.Color.Float32_0 = clear_color.X * clear_color.W;
+                g_MainWindowData.ClearValue.Color.Float32_1 = clear_color.Y * clear_color.W;
+                g_MainWindowData.ClearValue.Color.Float32_2 = clear_color.Z * clear_color.W;
+                g_MainWindowData.ClearValue.Color.Float32_3 = clear_color.W;
+                g_MainWindowData.FrameRender(draw_data);
+                g_MainWindowData.FramePresent();
+            }
         }
 
-        //     // Cleanup
-        //     err = vkDeviceWaitIdle(g_Device);
-        //     check_vk_result(err);
+        // Cleanup
+        vk.DeviceWaitIdle(vk_instance.Device).ThrowIfError();
         //     ImGui_ImplVulkan_Shutdown();
-
-        //     CleanupVulkanWindow(&g_MainWindowData);
-        //     CleanupVulkan();
 
         return 0;
     }
