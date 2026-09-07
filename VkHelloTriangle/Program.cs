@@ -2,14 +2,11 @@
 
 using System.Collections;
 using System.Runtime.InteropServices;
+using System.Text;
 using Silk.NET.Core.Native;
 using Silk.NET.GLFW;
-using Silk.NET.Vulkan;
-using Silk.NET.Vulkan.Extensions.EXT;
-using Silk.NET.Vulkan.Extensions.KHR;
-using VkImage = Silk.NET.Vulkan.Image;
-using VkQueue = Silk.NET.Vulkan.Queue;
-using VkSemaphore = Silk.NET.Vulkan.Semaphore;
+using Vortice.Vulkan;
+using static Vortice.Vulkan.Vulkan;
 
 public unsafe class ByteStringArrayAllocator : IDisposable, IEnumerable
 {
@@ -51,11 +48,21 @@ public unsafe class ByteStringArrayAllocator : IDisposable, IEnumerable
         _list.Add(p);
     }
 
+    public void Add(nint p)
+    {
+        _list.Add(Marshal.PtrToStringAnsi(p) ?? throw new Exception());
+    }
+
+    public void Add(ReadOnlySpan<byte> p)
+    {
+        Add(Encoding.UTF8.GetString(p));
+    }
+
     public void AddSpan(ReadOnlySpan<IntPtr> pp)
     {
         foreach (var p in pp)
         {
-            _list.Add(Marshal.PtrToStringAnsi(p) ?? throw new Exception());
+            Add(p);
         }
     }
 
@@ -93,20 +100,18 @@ struct QueueFamilyIndices
 
 struct SwapChainSupportDetails
 {
-    public SurfaceCapabilitiesKHR capabilities;
-    public SurfaceFormatKHR[] formats;
-    public PresentModeKHR[] presentModes;
+    public VkSurfaceCapabilitiesKHR capabilities;
+    public VkSurfaceFormatKHR[] formats;
+    public VkPresentModeKHR[] presentModes;
 };
 
 unsafe class HelloTriangleApplication
 {
     static readonly Glfw glfw;
-    static readonly Vk vk;
 
     static HelloTriangleApplication()
     {
         glfw = GlfwProvider.GLFW.Value ?? throw new NullReferenceException();
-        vk = Vk.GetApi() ?? throw new NullReferenceException();
     }
 
     const uint WIDTH = 800;
@@ -120,49 +125,57 @@ unsafe class HelloTriangleApplication
 
     // const int MAX_FRAMES_IN_FLIGHT = 2;
 
-    static readonly string[] validationLayers = ["VK_LAYER_KHRONOS_validation"];
-    static readonly string[] deviceExtensions = [KhrSwapchain.ExtensionName];
+    static readonly string[] validationLayers =
+    [
+        Encoding.ASCII.GetString(VK_LAYER_KHRONOS_VALIDATION_EXTENSION_NAME),
+    ];
+    static readonly string[] deviceExtensions =
+    [
+        Encoding.ASCII.GetString(VK_KHR_SWAPCHAIN_EXTENSION_NAME),
+    ];
 
     private WindowHandle* window;
-    private Instance instance;
+    private VkInstance instance;
+    private VkInstanceApi instanceApi;
 
-    private ExtDebugUtils extDebugUtils;
-    private DebugUtilsMessengerEXT debugMessenger;
+    // private DebugUtils extDebugUtils;
+    private VkDebugUtilsMessengerEXT debugMessenger;
 
-    private KhrSurface khrSurface;
-    private SurfaceKHR surface;
+    // private KhrSurface khrSurface;
+    private VkSurfaceKHR surface;
 
-    private PhysicalDevice physicalDevice;
-    private Device device;
+    private VkPhysicalDevice physicalDevice;
+    private VkDevice device;
+    private VkDeviceApi deviceApi;
 
     private VkQueue graphicsQueue;
     private VkQueue presentQueue;
 
-    private KhrSwapchain khrSwapchain;
-    private SwapchainKHR swapChain;
+    // private KhrSwapchain khrSwapchain;
+    private VkSwapchainKHR swapChain;
 
     private VkImage[] swapChainImages;
 
-    private Format swapChainImageFormat;
-    private Extent2D swapChainExtent;
+    private VkFormat swapChainImageFormat;
+    private VkExtent2D swapChainExtent;
 
-    private ImageView[] swapChainImageViews;
+    private VkImageView[] swapChainImageViews;
 
-    private Framebuffer[] swapChainFramebuffers;
+    private VkFramebuffer[] swapChainFramebuffers;
 
-    private RenderPass renderPass;
+    private VkRenderPass renderPass;
 
-    private PipelineLayout pipelineLayout;
+    private VkPipelineLayout pipelineLayout;
 
-    private Pipeline graphicsPipeline;
+    private VkPipeline graphicsPipeline;
 
-    private CommandPool commandPool;
+    private VkCommandPool commandPool;
 
-    private CommandBuffer commandBuffer;
+    private VkCommandBuffer commandBuffer;
 
     private VkSemaphore imageAvailableSemaphore;
     private VkSemaphore renderFinishedSemaphore;
-    private Fence inFlightFence;
+    private VkFence inFlightFence;
 
     public void Run()
     {
@@ -187,23 +200,23 @@ unsafe class HelloTriangleApplication
         createInstance();
 
         // get api
-        if (!vk.TryGetInstanceExtension(instance, out khrSurface))
-        {
-            throw new Exception("TryGetInstanceExtension");
-        }
-        if (!vk.TryGetInstanceExtension(instance, out extDebugUtils))
-        {
-            throw new Exception("TryGetInstanceExtension");
-        }
+        // if (!vk.TryGetInstanceExtension(instance, out khrSurface))
+        // {
+        //     throw new Exception("TryGetInstanceExtension");
+        // }
+        // if (!vk.TryGetInstanceExtension(instance, out extDebugUtils))
+        // {
+        //     throw new Exception("TryGetInstanceExtension");
+        // }
 
         setupDebugMessenger();
         createSurface();
         pickPhysicalDevice();
         createLogicalDevice();
-        if (!vk.TryGetDeviceExtension(instance, device, out khrSwapchain))
-        {
-            throw new Exception("TryGetDeviceExtension");
-        }
+        // if (!vk.TryGetDeviceExtension(instance, device, out khrSwapchain))
+        // {
+        //     throw new Exception("TryGetDeviceExtension");
+        // }
 
         createSwapChain();
         createImageViews();
@@ -223,41 +236,43 @@ unsafe class HelloTriangleApplication
             drawFrame();
         }
 
-        vk.DeviceWaitIdle(device);
+        deviceApi.vkDeviceWaitIdle();
     }
 
     void cleanup()
     {
-        vk.DestroySemaphore(device, renderFinishedSemaphore, null);
-        vk.DestroySemaphore(device, imageAvailableSemaphore, null);
-        vk.DestroyFence(device, inFlightFence, null);
+        deviceApi.vkDestroySemaphore(renderFinishedSemaphore, null);
+        deviceApi.vkDestroySemaphore(imageAvailableSemaphore, null);
+        deviceApi.vkDestroyFence(inFlightFence, null);
 
-        vk.DestroyCommandPool(device, commandPool, null);
+        deviceApi.vkDestroyCommandPool(commandPool, null);
 
         foreach (var framebuffer in swapChainFramebuffers)
         {
-            vk.DestroyFramebuffer(device, framebuffer, null);
+            deviceApi.vkDestroyFramebuffer(framebuffer, null);
         }
 
-        vk.DestroyPipeline(device, graphicsPipeline, null);
-        vk.DestroyPipelineLayout(device, pipelineLayout, null);
-        vk.DestroyRenderPass(device, renderPass, null);
+        deviceApi.vkDestroyPipeline(graphicsPipeline, null);
+        deviceApi.vkDestroyPipelineLayout(pipelineLayout, null);
+        deviceApi.vkDestroyRenderPass(renderPass, null);
 
         foreach (var imageView in swapChainImageViews)
         {
-            vk.DestroyImageView(device, imageView, null);
+            deviceApi.vkDestroyImageView(imageView, null);
         }
 
-        khrSwapchain.DestroySwapchain(device, swapChain, null);
-        vk.DestroyDevice(device, null);
+        deviceApi.vkDestroySwapchainKHR(swapChain, null);
+        deviceApi.vkDestroyDevice(null);
 
         if (enableValidationLayers)
         {
-            extDebugUtils.DestroyDebugUtilsMessenger(instance, debugMessenger, null);
+            instanceApi.vkDestroyDebugUtilsMessengerEXT(debugMessenger, null);
         }
 
-        khrSurface.DestroySurface(instance, surface, null);
-        vk.DestroyInstance(instance, null);
+        instanceApi.vkDestroySurfaceKHR(surface, null);
+        instanceApi.vkDestroyInstance(null);
+
+        vkShutdown();
 
         glfw.DestroyWindow(window);
 
@@ -271,6 +286,7 @@ unsafe class HelloTriangleApplication
 
     void createInstance()
     {
+        vkInitialize();
         if (enableValidationLayers && !checkValidationLayerSupport())
         {
             throw new Exception("validation layers requested, but not available!");
@@ -285,57 +301,58 @@ unsafe class HelloTriangleApplication
             extensions.AddSpan(glfwExtensions, glfwExtensionCount);
             if (enableValidationLayers)
             {
-                extensions.Add(ExtDebugUtils.ExtensionName);
+                extensions.Add(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
             }
 
-            var appInfo = new ApplicationInfo
+            var appInfo = new VkApplicationInfo
             {
-                SType = StructureType.ApplicationInfo,
-                PApplicationName = appName,
-                ApplicationVersion = Vk.MakeVersion(1, 0, 0),
-                PEngineName = engineName,
-                EngineVersion = Vk.MakeVersion(1, 0, 0),
-                ApiVersion = Vk.Version10,
+                sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
+                pApplicationName = appName,
+                // applicationVersion = Vk.MakeVersion(1, 0, 0),
+                pEngineName = engineName,
+                // engineVersion = Vk.MakeVersion(1, 0, 0),
+                apiVersion = VK_API_VERSION_1_0,
             };
-            var createInfo = new InstanceCreateInfo
+            var createInfo = new VkInstanceCreateInfo
             {
-                SType = StructureType.InstanceCreateInfo,
-                PApplicationInfo = &appInfo,
-                EnabledLayerCount = 0,
-                PNext = null,
+                sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+                pApplicationInfo = &appInfo,
+                enabledLayerCount = 0,
+                pNext = null,
             };
-            (createInfo.EnabledExtensionCount, createInfo.PpEnabledExtensionNames) = extensions;
+            (createInfo.enabledExtensionCount, createInfo.ppEnabledExtensionNames) = extensions;
 
-            DebugUtilsMessengerCreateInfoEXT debugCreateInfo = default;
+            VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo = default;
             ByteStringArrayAllocator layers = [.. validationLayers];
             if (enableValidationLayers)
             {
-                (createInfo.EnabledLayerCount, createInfo.PpEnabledLayerNames) = layers;
+                (createInfo.enabledLayerCount, createInfo.ppEnabledLayerNames) = layers;
 
                 populateDebugMessengerCreateInfo(out debugCreateInfo);
-                createInfo.PNext = &debugCreateInfo;
+                createInfo.pNext = &debugCreateInfo;
             }
-            if (vk.CreateInstance(&createInfo, null, out instance) != Result.Success)
+            if (vkCreateInstance(&createInfo, null, out instance) != VK_SUCCESS)
             {
                 throw new Exception("failed to create instance!");
             }
+            instanceApi = new VkInstanceApi(instance);
         }
     }
 
-    void populateDebugMessengerCreateInfo(out DebugUtilsMessengerCreateInfoEXT createInfo)
+    void populateDebugMessengerCreateInfo(out VkDebugUtilsMessengerCreateInfoEXT createInfo)
     {
-        createInfo = new DebugUtilsMessengerCreateInfoEXT
+        createInfo = new VkDebugUtilsMessengerCreateInfoEXT
         {
-            SType = StructureType.DebugUtilsMessengerCreateInfoExt,
-            MessageSeverity =
-                DebugUtilsMessageSeverityFlagsEXT.VerboseBitExt
-                | DebugUtilsMessageSeverityFlagsEXT.WarningBitExt
-                | DebugUtilsMessageSeverityFlagsEXT.ErrorBitExt,
-            MessageType =
-                DebugUtilsMessageTypeFlagsEXT.GeneralBitExt
-                | DebugUtilsMessageTypeFlagsEXT.ValidationBitExt
-                | DebugUtilsMessageTypeFlagsEXT.PerformanceBitExt,
-            PfnUserCallback = (DebugUtilsMessengerCallbackFunctionEXT)debugCallback,
+            sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
+            messageSeverity =
+                VkDebugUtilsMessageSeverityFlagsEXT.Verbose
+                | VkDebugUtilsMessageSeverityFlagsEXT.Warning
+                | VkDebugUtilsMessageSeverityFlagsEXT.Error,
+            messageType =
+                VkDebugUtilsMessageTypeFlagsEXT.General
+                | VkDebugUtilsMessageTypeFlagsEXT.Validation
+                | VkDebugUtilsMessageTypeFlagsEXT.Performance,
+            pfnUserCallback = &debugCallback,
         };
     }
 
@@ -347,8 +364,8 @@ unsafe class HelloTriangleApplication
         populateDebugMessengerCreateInfo(out var createInfo);
 
         if (
-            extDebugUtils.CreateDebugUtilsMessenger(instance, &createInfo, null, out debugMessenger)
-            != Result.Success
+            instanceApi.vkCreateDebugUtilsMessengerEXT(&createInfo, null, out debugMessenger)
+            != VK_SUCCESS
         )
         {
             throw new Exception("failed to set up debug messenger!");
@@ -359,8 +376,9 @@ unsafe class HelloTriangleApplication
     {
         VkNonDispatchableHandle _surface;
         if (
-            (Result)glfw.CreateWindowSurface(new VkHandle(instance.Handle), window, null, &_surface)
-            != Result.Success
+            (VkResult)
+                glfw.CreateWindowSurface(new VkHandle(instance.Handle), window, null, &_surface)
+            != VK_SUCCESS
         )
         {
             throw new Exception("failed to create window surface!");
@@ -371,22 +389,22 @@ unsafe class HelloTriangleApplication
     void pickPhysicalDevice()
     {
         uint physicalDeviceCount = 0;
-        vk.EnumeratePhysicalDevices(instance, &physicalDeviceCount, null);
+        instanceApi.vkEnumeratePhysicalDevices(&physicalDeviceCount, null);
 
         if (physicalDeviceCount == 0)
         {
             throw new Exception("failed to find GPUs with Vulkan support!");
         }
 
-        var physicalDevices = stackalloc PhysicalDevice[(int)physicalDeviceCount];
-        vk.EnumeratePhysicalDevices(instance, &physicalDeviceCount, physicalDevices);
+        Span<VkPhysicalDevice> physicalDevices =
+            stackalloc VkPhysicalDevice[(int)physicalDeviceCount];
+        instanceApi.vkEnumeratePhysicalDevices(physicalDevices);
 
-        for (int i = 0; i < physicalDeviceCount; ++i)
+        foreach (var physicalDevice in physicalDevices)
         {
-            var _physicalDevice = physicalDevices[i];
-            if (isDeviceSuitable(_physicalDevice))
+            if (isDeviceSuitable(physicalDevice))
             {
-                physicalDevice = _physicalDevice;
+                this.physicalDevice = physicalDevice;
                 break;
             }
         }
@@ -402,51 +420,50 @@ unsafe class HelloTriangleApplication
         var indices = findQueueFamilies(physicalDevice);
 
         var uniqueQueueFamilies = indices.ToUniqueSet();
-        var queueCreateInfos = stackalloc DeviceQueueCreateInfo[2];
+        var queueCreateInfos = stackalloc VkDeviceQueueCreateInfo[2];
         float queuePriority = 1.0f;
 
         uint uniq = 0;
         foreach (var queueFamily in uniqueQueueFamilies)
         {
-            queueCreateInfos[uniq].SType = StructureType.DeviceQueueCreateInfo;
-            queueCreateInfos[uniq].QueueFamilyIndex = queueFamily;
-            queueCreateInfos[uniq].QueueCount = 1;
-            queueCreateInfos[uniq].PQueuePriorities = &queuePriority;
+            queueCreateInfos[uniq].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+            queueCreateInfos[uniq].queueFamilyIndex = queueFamily;
+            queueCreateInfos[uniq].queueCount = 1;
+            queueCreateInfos[uniq].pQueuePriorities = &queuePriority;
             ++uniq;
         }
 
-        PhysicalDeviceFeatures deviceFeatures = default;
+        VkPhysicalDeviceFeatures deviceFeatures = default;
 
-        var createInfo = new DeviceCreateInfo
+        var createInfo = new VkDeviceCreateInfo
         {
-            SType = StructureType.DeviceCreateInfo,
-            QueueCreateInfoCount = uniq,
-            PQueueCreateInfos = queueCreateInfos,
-            PEnabledFeatures = &deviceFeatures,
+            sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+            queueCreateInfoCount = uniq,
+            pQueueCreateInfos = queueCreateInfos,
+            pEnabledFeatures = &deviceFeatures,
         };
 
         ByteStringArrayAllocator extensions = [.. deviceExtensions];
-        (createInfo.EnabledExtensionCount, createInfo.PpEnabledExtensionNames) = extensions;
+        (createInfo.enabledExtensionCount, createInfo.ppEnabledExtensionNames) = extensions;
 
         ByteStringArrayAllocator layers = [.. validationLayers];
         if (enableValidationLayers)
         {
-            (createInfo.EnabledLayerCount, createInfo.PpEnabledLayerNames) = layers;
+            (createInfo.enabledLayerCount, createInfo.ppEnabledLayerNames) = layers;
         }
 
-        if (vk.CreateDevice(physicalDevice, &createInfo, null, out device) != Result.Success)
+        if (instanceApi.vkCreateDevice(physicalDevice, &createInfo, null, out device) != VK_SUCCESS)
         {
             throw new Exception("failed to create logical device!");
         }
+        deviceApi = new VkDeviceApi(instanceApi, device);
 
-        vk.GetDeviceQueue(
-            device,
+        deviceApi.vkGetDeviceQueue(
             indices.graphicsFamily ?? throw new Exception(),
             0,
             out graphicsQueue
         );
-        vk.GetDeviceQueue(
-            device,
+        deviceApi.vkGetDeviceQueue(
             indices.presentFamily ?? throw new Exception(),
             0,
             out presentQueue
@@ -461,25 +478,25 @@ unsafe class HelloTriangleApplication
         var presentMode = chooseSwapPresentMode(swapChainSupport.presentModes);
         var extent = chooseSwapExtent(swapChainSupport.capabilities);
 
-        var imageCount = swapChainSupport.capabilities.MinImageCount + 1;
+        var imageCount = swapChainSupport.capabilities.minImageCount + 1;
         if (
-            swapChainSupport.capabilities.MaxImageCount > 0
-            && imageCount > swapChainSupport.capabilities.MaxImageCount
+            swapChainSupport.capabilities.maxImageCount > 0
+            && imageCount > swapChainSupport.capabilities.maxImageCount
         )
         {
-            imageCount = swapChainSupport.capabilities.MaxImageCount;
+            imageCount = swapChainSupport.capabilities.maxImageCount;
         }
 
-        var createInfo = new SwapchainCreateInfoKHR
+        var createInfo = new VkSwapchainCreateInfoKHR
         {
-            SType = StructureType.SwapchainCreateInfoKhr,
-            Surface = surface,
-            MinImageCount = imageCount,
-            ImageFormat = surfaceFormat.Format,
-            ImageColorSpace = surfaceFormat.ColorSpace,
-            ImageExtent = extent,
-            ImageArrayLayers = 1,
-            ImageUsage = ImageUsageFlags.ColorAttachmentBit,
+            sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+            surface = surface,
+            minImageCount = imageCount,
+            imageFormat = surfaceFormat.format,
+            imageColorSpace = surfaceFormat.colorSpace,
+            imageExtent = extent,
+            imageArrayLayers = 1,
+            imageUsage = VkImageUsageFlags.ColorAttachment,
         };
 
         var indices = findQueueFamilies(physicalDevice);
@@ -491,64 +508,65 @@ unsafe class HelloTriangleApplication
 
         if (indices.graphicsFamily != indices.presentFamily)
         {
-            createInfo.ImageSharingMode = SharingMode.Concurrent;
-            createInfo.QueueFamilyIndexCount = 2;
-            createInfo.PQueueFamilyIndices = queueFamilyIndices;
+            createInfo.imageSharingMode = VkSharingMode.Concurrent;
+            createInfo.queueFamilyIndexCount = 2;
+            createInfo.pQueueFamilyIndices = queueFamilyIndices;
         }
         else
         {
-            createInfo.ImageSharingMode = SharingMode.Exclusive;
+            createInfo.imageSharingMode = VkSharingMode.Exclusive;
         }
 
-        createInfo.PreTransform = swapChainSupport.capabilities.CurrentTransform;
+        createInfo.preTransform = swapChainSupport.capabilities.currentTransform;
         // createInfo.CompositeAlpha = CompositeAlphaFlagsKHR.CompositeAlphaOpaqueBitKhr;
-        createInfo.CompositeAlpha = CompositeAlphaFlagsKHR.OpaqueBitKhr;
-        createInfo.PresentMode = presentMode;
-        createInfo.Clipped = true;
+        createInfo.compositeAlpha = VkCompositeAlphaFlagsKHR.Opaque;
+        createInfo.presentMode = presentMode;
+        createInfo.clipped = true;
 
-        createInfo.OldSwapchain = default;
+        createInfo.oldSwapchain = default;
 
-        if (
-            khrSwapchain.CreateSwapchain(device, &createInfo, null, out swapChain) != Result.Success
-        )
+        if (deviceApi.vkCreateSwapchainKHR(&createInfo, null, out swapChain) != VK_SUCCESS)
         {
             throw new Exception("failed to create swap chain!");
         }
 
-        khrSwapchain.GetSwapchainImages(device, swapChain, &imageCount, null);
+        deviceApi.vkGetSwapchainImagesKHR(swapChain, &imageCount, null);
         swapChainImages = new VkImage[(int)imageCount];
-        khrSwapchain.GetSwapchainImages(device, swapChain, &imageCount, swapChainImages);
+        fixed (VkImage* images = swapChainImages)
+        {
+            deviceApi.vkGetSwapchainImagesKHR(swapChain, &imageCount, images);
+        }
 
-        swapChainImageFormat = surfaceFormat.Format;
+        swapChainImageFormat = surfaceFormat.format;
         swapChainExtent = extent;
     }
 
     void createImageViews()
     {
-        swapChainImageViews = new ImageView[swapChainImages.Length];
+        swapChainImageViews = new VkImageView[swapChainImages.Length];
 
         for (int i = 0; i < swapChainImages.Length; ++i)
         {
-            var createInfo = new ImageViewCreateInfo
+            var createInfo = new VkImageViewCreateInfo
             {
-                SType = StructureType.ImageViewCreateInfo,
-                Image = swapChainImages[i],
-                ViewType = ImageViewType.Type2D,
-                Format = swapChainImageFormat,
+                sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+                image = swapChainImages[i],
+                viewType = VkImageViewType.Image2D,
+                format = swapChainImageFormat,
             };
-            createInfo.Components.R = ComponentSwizzle.Identity;
-            createInfo.Components.G = ComponentSwizzle.Identity;
-            createInfo.Components.B = ComponentSwizzle.Identity;
-            createInfo.Components.A = ComponentSwizzle.Identity;
-            createInfo.SubresourceRange.AspectMask = ImageAspectFlags.ColorBit;
-            createInfo.SubresourceRange.BaseMipLevel = 0;
-            createInfo.SubresourceRange.LevelCount = 1;
-            createInfo.SubresourceRange.BaseArrayLayer = 0;
-            createInfo.SubresourceRange.LayerCount = 1;
+            createInfo.components.r = VkComponentSwizzle.Identity;
+            createInfo.components.g = VkComponentSwizzle.Identity;
+            createInfo.components.b = VkComponentSwizzle.Identity;
+            createInfo.components.a = VkComponentSwizzle.Identity;
+            createInfo.subresourceRange.aspectMask = VkImageAspectFlags.Color;
+            createInfo.subresourceRange.baseMipLevel = 0;
+            createInfo.subresourceRange.levelCount = 1;
+            createInfo.subresourceRange.baseArrayLayer = 0;
+            createInfo.subresourceRange.layerCount = 1;
 
             if (
-                vk.CreateImageView(device, &createInfo, null, out swapChainImageViews[i])
-                != Result.Success
+                deviceApi.vkCreateImageView(&createInfo, null, out swapChainImageViews[i])
+                != VK_SUCCESS
             )
             {
                 throw new Exception("failed to create image views!");
@@ -558,53 +576,53 @@ unsafe class HelloTriangleApplication
 
     void createRenderPass()
     {
-        var colorAttachment = new AttachmentDescription
+        var colorAttachment = new VkAttachmentDescription
         {
-            Format = swapChainImageFormat,
-            Samples = SampleCountFlags.Count1Bit,
-            LoadOp = AttachmentLoadOp.Clear,
-            StoreOp = AttachmentStoreOp.Store,
-            StencilLoadOp = AttachmentLoadOp.DontCare,
-            StencilStoreOp = AttachmentStoreOp.DontCare,
-            InitialLayout = ImageLayout.Undefined,
-            FinalLayout = ImageLayout.PresentSrcKhr,
+            format = swapChainImageFormat,
+            samples = VkSampleCountFlags.Count1,
+            loadOp = VkAttachmentLoadOp.Clear,
+            storeOp = VkAttachmentStoreOp.Store,
+            stencilLoadOp = VkAttachmentLoadOp.DontCare,
+            stencilStoreOp = VkAttachmentStoreOp.DontCare,
+            initialLayout = VkImageLayout.Undefined,
+            finalLayout = VkImageLayout.PresentSrcKHR,
         };
 
-        var colorAttachmentRef = new AttachmentReference
+        var colorAttachmentRef = new VkAttachmentReference
         {
-            Attachment = 0,
-            Layout = ImageLayout.ColorAttachmentOptimal,
+            attachment = 0,
+            layout = VkImageLayout.ColorAttachmentOptimal,
         };
 
-        var subpass = new SubpassDescription
+        var subpass = new VkSubpassDescription
         {
-            PipelineBindPoint = PipelineBindPoint.Graphics,
-            ColorAttachmentCount = 1,
-            PColorAttachments = &colorAttachmentRef,
+            pipelineBindPoint = VkPipelineBindPoint.Graphics,
+            colorAttachmentCount = 1,
+            pColorAttachments = &colorAttachmentRef,
         };
 
-        var dependency = new SubpassDependency
+        var dependency = new VkSubpassDependency
         {
-            SrcSubpass = Vk.SubpassExternal,
-            DstSubpass = 0,
-            SrcStageMask = PipelineStageFlags.ColorAttachmentOutputBit,
-            SrcAccessMask = 0,
-            DstStageMask = PipelineStageFlags.ColorAttachmentOutputBit,
-            DstAccessMask = AccessFlags.ColorAttachmentWriteBit,
+            srcSubpass = VK_SUBPASS_EXTERNAL,
+            dstSubpass = 0,
+            srcStageMask = VkPipelineStageFlags.ColorAttachmentOutput,
+            srcAccessMask = 0,
+            dstStageMask = VkPipelineStageFlags.ColorAttachmentOutput,
+            dstAccessMask = VkAccessFlags.ColorAttachmentWrite,
         };
 
-        var renderPassInfo = new RenderPassCreateInfo
+        var renderPassInfo = new VkRenderPassCreateInfo
         {
-            SType = StructureType.RenderPassCreateInfo,
-            AttachmentCount = 1,
-            PAttachments = &colorAttachment,
-            SubpassCount = 1,
-            PSubpasses = &subpass,
-            DependencyCount = 1,
-            PDependencies = &dependency,
+            sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+            attachmentCount = 1,
+            pAttachments = &colorAttachment,
+            subpassCount = 1,
+            pSubpasses = &subpass,
+            dependencyCount = 1,
+            pDependencies = &dependency,
         };
 
-        if (vk.CreateRenderPass(device, &renderPassInfo, null, out renderPass) != Result.Success)
+        if (deviceApi.vkCreateRenderPass(&renderPassInfo, null, out renderPass) != VK_SUCCESS)
         {
             throw new Exception("failed to create render pass!");
         }
@@ -620,170 +638,171 @@ unsafe class HelloTriangleApplication
 
         fixed (byte* main = "main"u8)
         {
-            var vertShaderStageInfo = new PipelineShaderStageCreateInfo
+            var vertShaderStageInfo = new VkPipelineShaderStageCreateInfo
             {
-                SType = StructureType.PipelineShaderStageCreateInfo,
-                Stage = ShaderStageFlags.VertexBit,
-                Module = vertShaderModule,
-                PName = main,
+                sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                stage = VkShaderStageFlags.Vertex,
+                module = vertShaderModule,
+                pName = main,
             };
-            var fragShaderStageInfo = new PipelineShaderStageCreateInfo
+            var fragShaderStageInfo = new VkPipelineShaderStageCreateInfo
             {
-                SType = StructureType.PipelineShaderStageCreateInfo,
-                Stage = ShaderStageFlags.FragmentBit,
-                Module = fragShaderModule,
-                PName = main,
+                sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                stage = VkShaderStageFlags.Fragment,
+                module = fragShaderModule,
+                pName = main,
             };
-            var shaderStages = stackalloc PipelineShaderStageCreateInfo[]
+            var shaderStages = stackalloc VkPipelineShaderStageCreateInfo[]
             {
                 vertShaderStageInfo,
                 fragShaderStageInfo,
             };
 
-            var vertexInputInfo = new PipelineVertexInputStateCreateInfo
+            var vertexInputInfo = new VkPipelineVertexInputStateCreateInfo
             {
-                SType = StructureType.PipelineVertexInputStateCreateInfo,
-                VertexBindingDescriptionCount = 0,
-                VertexAttributeDescriptionCount = 0,
+                sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+                vertexBindingDescriptionCount = 0,
+                vertexAttributeDescriptionCount = 0,
             };
 
-            var inputAssembly = new PipelineInputAssemblyStateCreateInfo
+            var inputAssembly = new VkPipelineInputAssemblyStateCreateInfo
             {
-                SType = StructureType.PipelineInputAssemblyStateCreateInfo,
-                Topology = PrimitiveTopology.TriangleList,
-                PrimitiveRestartEnable = Vk.False,
+                sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+                topology = VkPrimitiveTopology.TriangleList,
+                primitiveRestartEnable = false,
             };
-            var viewportState = new PipelineViewportStateCreateInfo
+            var viewportState = new VkPipelineViewportStateCreateInfo
             {
-                SType = StructureType.PipelineViewportStateCreateInfo,
-                ViewportCount = 1,
-                ScissorCount = 1,
+                sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+                viewportCount = 1,
+                scissorCount = 1,
             };
-            var rasterizer = new PipelineRasterizationStateCreateInfo
+            var rasterizer = new VkPipelineRasterizationStateCreateInfo
             {
-                SType = StructureType.PipelineRasterizationStateCreateInfo,
-                DepthClampEnable = Vk.False,
-                RasterizerDiscardEnable = Vk.False,
-                PolygonMode = PolygonMode.Fill,
-                LineWidth = 1.0f,
-                CullMode = CullModeFlags.BackBit,
-                FrontFace = FrontFace.Clockwise,
-                DepthBiasEnable = Vk.False,
+                sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+                depthClampEnable = false,
+                rasterizerDiscardEnable = false,
+                polygonMode = VkPolygonMode.Fill,
+                lineWidth = 1.0f,
+                cullMode = VkCullModeFlags.Back,
+                frontFace = VkFrontFace.Clockwise,
+                depthBiasEnable = false,
             };
-            var multisampling = new PipelineMultisampleStateCreateInfo
+            var multisampling = new VkPipelineMultisampleStateCreateInfo
             {
-                SType = StructureType.PipelineMultisampleStateCreateInfo,
-                SampleShadingEnable = Vk.False,
-                RasterizationSamples = SampleCountFlags.Count1Bit,
+                sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+                sampleShadingEnable = false,
+                rasterizationSamples = VkSampleCountFlags.Count1,
             };
-            var colorBlendAttachment = new PipelineColorBlendAttachmentState
+            var colorBlendAttachment = new VkPipelineColorBlendAttachmentState
             {
-                ColorWriteMask =
-                    ColorComponentFlags.RBit
-                    | ColorComponentFlags.GBit
-                    | ColorComponentFlags.BBit
-                    | ColorComponentFlags.ABit,
-                BlendEnable = Vk.False,
+                colorWriteMask =
+                    VkColorComponentFlags.R
+                    | VkColorComponentFlags.G
+                    | VkColorComponentFlags.B
+                    | VkColorComponentFlags.A,
+                blendEnable = false,
             };
-            var colorBlending = new PipelineColorBlendStateCreateInfo
+            var colorBlending = new VkPipelineColorBlendStateCreateInfo
             {
-                SType = StructureType.PipelineColorBlendStateCreateInfo,
-                LogicOpEnable = Vk.False,
-                LogicOp = LogicOp.Copy,
-                AttachmentCount = 1,
-                PAttachments = &colorBlendAttachment,
+                sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+                logicOpEnable = false,
+                logicOp = VkLogicOp.Copy,
+                attachmentCount = 1,
+                pAttachments = &colorBlendAttachment,
             };
-            colorBlending.BlendConstants[0] = 0.0f;
-            colorBlending.BlendConstants[1] = 0.0f;
-            colorBlending.BlendConstants[2] = 0.0f;
-            colorBlending.BlendConstants[3] = 0.0f;
+            colorBlending.blendConstants[0] = 0.0f;
+            colorBlending.blendConstants[1] = 0.0f;
+            colorBlending.blendConstants[2] = 0.0f;
+            colorBlending.blendConstants[3] = 0.0f;
 
-            var dynamicStates = stackalloc DynamicState[]
+            var dynamicStates = stackalloc VkDynamicState[]
             {
-                DynamicState.Viewport,
-                DynamicState.Scissor,
+                VkDynamicState.Viewport,
+                VkDynamicState.Scissor,
             };
-            var dynamicState = new PipelineDynamicStateCreateInfo
+            var dynamicState = new VkPipelineDynamicStateCreateInfo
             {
-                SType = StructureType.PipelineDynamicStateCreateInfo,
-                DynamicStateCount = 2, //(uint)dynamicStates.Length,
-                PDynamicStates = dynamicStates,
+                sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+                dynamicStateCount = 2, //(uint)dynamicStates.Length,
+                pDynamicStates = dynamicStates,
             };
 
-            var pipelineLayoutInfo = new PipelineLayoutCreateInfo
+            var pipelineLayoutInfo = new VkPipelineLayoutCreateInfo
             {
-                SType = StructureType.PipelineLayoutCreateInfo,
-                SetLayoutCount = 0,
-                PushConstantRangeCount = 0,
+                sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+                setLayoutCount = 0,
+                pushConstantRangeCount = 0,
             };
 
             if (
-                vk.CreatePipelineLayout(device, &pipelineLayoutInfo, null, out pipelineLayout)
-                != Result.Success
+                deviceApi.vkCreatePipelineLayout(&pipelineLayoutInfo, null, out pipelineLayout)
+                != VK_SUCCESS
             )
             {
                 throw new Exception("failed to create pipeline layout!");
             }
 
-            var pipelineInfo = new GraphicsPipelineCreateInfo
+            var pipelineInfo = new VkGraphicsPipelineCreateInfo
             {
-                SType = StructureType.GraphicsPipelineCreateInfo,
-                StageCount = 2,
-                PStages = shaderStages,
-                PVertexInputState = &vertexInputInfo,
-                PInputAssemblyState = &inputAssembly,
-                PViewportState = &viewportState,
-                PRasterizationState = &rasterizer,
-                PMultisampleState = &multisampling,
-                PColorBlendState = &colorBlending,
-                PDynamicState = &dynamicState,
-                Layout = pipelineLayout,
-                RenderPass = renderPass,
-                Subpass = 0,
-                BasePipelineHandle = default,
+                sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+                stageCount = 2,
+                pStages = shaderStages,
+                pVertexInputState = &vertexInputInfo,
+                pInputAssemblyState = &inputAssembly,
+                pViewportState = &viewportState,
+                pRasterizationState = &rasterizer,
+                pMultisampleState = &multisampling,
+                pColorBlendState = &colorBlending,
+                pDynamicState = &dynamicState,
+                layout = pipelineLayout,
+                renderPass = renderPass,
+                subpass = 0,
+                basePipelineHandle = default,
             };
 
+            VkPipeline _graphicsPipeline;
             if (
-                vk.CreateGraphicsPipelines(
-                    device,
+                deviceApi.vkCreateGraphicsPipelines(
                     default,
                     1,
                     &pipelineInfo,
                     null,
-                    out graphicsPipeline
-                ) != Result.Success
+                    &_graphicsPipeline
+                ) != VK_SUCCESS
             )
             {
                 throw new Exception("failed to create graphics pipeline!");
             }
+            graphicsPipeline = _graphicsPipeline;
 
-            vk.DestroyShaderModule(device, fragShaderModule, null);
-            vk.DestroyShaderModule(device, vertShaderModule, null);
+            deviceApi.vkDestroyShaderModule(fragShaderModule, null);
+            deviceApi.vkDestroyShaderModule(vertShaderModule, null);
         }
     }
 
     void createFramebuffers()
     {
-        swapChainFramebuffers = new Framebuffer[swapChainImageViews.Length];
+        swapChainFramebuffers = new VkFramebuffer[swapChainImageViews.Length];
 
         for (int i = 0; i < swapChainImageViews.Length; i++)
         {
             var attachment = swapChainImageViews[i];
 
-            var framebufferInfo = new FramebufferCreateInfo
+            var framebufferInfo = new VkFramebufferCreateInfo
             {
-                SType = StructureType.FramebufferCreateInfo,
-                RenderPass = renderPass,
-                AttachmentCount = 1,
-                PAttachments = &attachment,
-                Width = swapChainExtent.Width,
-                Height = swapChainExtent.Height,
-                Layers = 1,
+                sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+                renderPass = renderPass,
+                attachmentCount = 1,
+                pAttachments = &attachment,
+                width = swapChainExtent.width,
+                height = swapChainExtent.height,
+                layers = 1,
             };
 
             if (
-                vk.CreateFramebuffer(device, &framebufferInfo, null, out swapChainFramebuffers[i])
-                != Result.Success
+                deviceApi.vkCreateFramebuffer(&framebufferInfo, null, out swapChainFramebuffers[i])
+                != VK_SUCCESS
             )
             {
                 throw new Exception("failed to create framebuffer!");
@@ -795,14 +814,14 @@ unsafe class HelloTriangleApplication
     {
         var queueFamilyIndices = findQueueFamilies(physicalDevice);
 
-        var poolInfo = new CommandPoolCreateInfo
+        var poolInfo = new VkCommandPoolCreateInfo
         {
-            SType = StructureType.CommandPoolCreateInfo,
-            Flags = CommandPoolCreateFlags.ResetCommandBufferBit,
-            QueueFamilyIndex = queueFamilyIndices.graphicsFamily ?? throw new Exception(),
+            sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+            flags = VkCommandPoolCreateFlags.ResetCommandBuffer,
+            queueFamilyIndex = queueFamilyIndices.graphicsFamily ?? throw new Exception(),
         };
 
-        if (vk.CreateCommandPool(device, &poolInfo, null, out commandPool) != Result.Success)
+        if (deviceApi.vkCreateCommandPool(&poolInfo, null, out commandPool) != VK_SUCCESS)
         {
             throw new Exception("failed to create command pool!");
         }
@@ -810,72 +829,72 @@ unsafe class HelloTriangleApplication
 
     void createCommandBuffer()
     {
-        var allocInfo = new CommandBufferAllocateInfo
+        var allocInfo = new VkCommandBufferAllocateInfo
         {
-            SType = StructureType.CommandBufferAllocateInfo,
-            CommandPool = commandPool,
-            Level = CommandBufferLevel.Primary,
-            CommandBufferCount = 1,
+            sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            commandPool = commandPool,
+            level = VkCommandBufferLevel.Primary,
+            commandBufferCount = 1,
         };
 
-        if (vk.AllocateCommandBuffers(device, &allocInfo, out commandBuffer) != Result.Success)
+        VkCommandBuffer _commandBuffer;
+        if (deviceApi.vkAllocateCommandBuffers(&allocInfo, &_commandBuffer) != VK_SUCCESS)
         {
             throw new Exception("failed to allocate command buffers!");
         }
+        commandBuffer = _commandBuffer;
     }
 
-    void recordCommandBuffer(CommandBuffer commandBuffer, uint imageIndex)
+    void recordCommandBuffer(VkCommandBuffer commandBuffer, uint imageIndex)
     {
-        var beginInfo = new CommandBufferBeginInfo { SType = StructureType.CommandBufferBeginInfo };
-        if (vk.BeginCommandBuffer(commandBuffer, &beginInfo) != Result.Success)
+        var beginInfo = new VkCommandBufferBeginInfo
+        {
+            sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        };
+        if (deviceApi.vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS)
         {
             throw new Exception("failed to begin recording command buffer!");
         }
 
-        var renderPassInfo = new RenderPassBeginInfo
+        var renderPassInfo = new VkRenderPassBeginInfo
         {
-            SType = StructureType.RenderPassBeginInfo,
-            RenderPass = renderPass,
-            Framebuffer = swapChainFramebuffers[imageIndex],
+            sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+            renderPass = renderPass,
+            framebuffer = swapChainFramebuffers[imageIndex],
         };
-        renderPassInfo.RenderArea.Offset = new(0, 0);
-        renderPassInfo.RenderArea.Extent = swapChainExtent;
+        renderPassInfo.renderArea.offset = new(0, 0);
+        renderPassInfo.renderArea.extent = swapChainExtent;
 
-        var clearColor = new ClearValue
+        var clearColor = new VkClearValue { };
+        clearColor.color.float32[0] = 0.0f;
+        clearColor.color.float32[1] = 0.0f;
+        clearColor.color.float32[2] = 0.0f;
+        clearColor.color.float32[2] = 1.0f;
+        renderPassInfo.clearValueCount = 1;
+        renderPassInfo.pClearValues = &clearColor;
+
+        deviceApi.vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VkSubpassContents.Inline);
+
+        deviceApi.vkCmdBindPipeline(commandBuffer, VkPipelineBindPoint.Graphics, graphicsPipeline);
+
+        var viewport = new VkViewport
         {
-            Color = new ClearColorValue
-            {
-                Float32_0 = 0.0f,
-                Float32_1 = 0.0f,
-                Float32_2 = 0.0f,
-                Float32_3 = 1.0f,
-            },
+            x = 0.0f,
+            y = 0.0f,
+            width = swapChainExtent.width,
+            height = swapChainExtent.height,
+            minDepth = 0.0f,
+            maxDepth = 1.0f,
         };
-        renderPassInfo.ClearValueCount = 1;
-        renderPassInfo.PClearValues = &clearColor;
+        deviceApi.vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
 
-        vk.CmdBeginRenderPass(commandBuffer, &renderPassInfo, SubpassContents.Inline);
+        var scissor = new VkRect2D { offset = new(0, 0), extent = swapChainExtent };
+        deviceApi.vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-        vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Graphics, graphicsPipeline);
+        deviceApi.vkCmdDraw(commandBuffer, 3, 1, 0, 0);
 
-        var viewport = new Viewport
-        {
-            X = 0.0f,
-            Y = 0.0f,
-            Width = swapChainExtent.Width,
-            Height = swapChainExtent.Height,
-            MinDepth = 0.0f,
-            MaxDepth = 1.0f,
-        };
-        vk.CmdSetViewport(commandBuffer, 0, 1, &viewport);
-
-        var scissor = new Rect2D { Offset = new(0, 0), Extent = swapChainExtent };
-        vk.CmdSetScissor(commandBuffer, 0, 1, &scissor);
-
-        vk.CmdDraw(commandBuffer, 3, 1, 0, 0);
-
-        vk.CmdEndRenderPass(commandBuffer);
-        if (vk.EndCommandBuffer(commandBuffer) != Result.Success)
+        deviceApi.vkCmdEndRenderPass(commandBuffer);
+        if (deviceApi.vkEndCommandBuffer(commandBuffer) != VK_SUCCESS)
         {
             throw new Exception("failed to record command buffer!");
         }
@@ -883,20 +902,23 @@ unsafe class HelloTriangleApplication
 
     void createSyncObjects()
     {
-        var semaphoreInfo = new SemaphoreCreateInfo { SType = StructureType.SemaphoreCreateInfo };
-
-        var fenceInfo = new FenceCreateInfo
+        var semaphoreInfo = new VkSemaphoreCreateInfo
         {
-            SType = StructureType.FenceCreateInfo,
-            Flags = FenceCreateFlags.SignaledBit,
+            sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+        };
+
+        var fenceInfo = new VkFenceCreateInfo
+        {
+            sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+            flags = VkFenceCreateFlags.Signaled,
         };
 
         if (
-            vk.CreateSemaphore(device, &semaphoreInfo, null, out imageAvailableSemaphore)
-                != Result.Success
-            || vk.CreateSemaphore(device, &semaphoreInfo, null, out renderFinishedSemaphore)
-                != Result.Success
-            || vk.CreateFence(device, &fenceInfo, null, out inFlightFence) != Result.Success
+            deviceApi.vkCreateSemaphore(&semaphoreInfo, null, out imageAvailableSemaphore)
+                != VK_SUCCESS
+            || deviceApi.vkCreateSemaphore(&semaphoreInfo, null, out renderFinishedSemaphore)
+                != VK_SUCCESS
+            || deviceApi.vkCreateFence(&fenceInfo, null, out inFlightFence) != VK_SUCCESS
         )
         {
             throw new Exception("failed to create synchronization objects for a frame!");
@@ -905,12 +927,12 @@ unsafe class HelloTriangleApplication
 
     void drawFrame()
     {
-        vk.WaitForFences(device, 1, in inFlightFence, true, ulong.MaxValue);
-        vk.ResetFences(device, 1, in inFlightFence);
+        var _inFlightFence = inFlightFence;
+        deviceApi.vkWaitForFences(1, &_inFlightFence, true, ulong.MaxValue);
+        deviceApi.vkResetFences(1, &_inFlightFence);
 
         uint imageIndex;
-        khrSwapchain.AcquireNextImage(
-            device,
+        deviceApi.vkAcquireNextImageKHR(
             swapChain,
             ulong.MaxValue,
             imageAvailableSemaphore,
@@ -918,63 +940,63 @@ unsafe class HelloTriangleApplication
             &imageIndex
         );
 
-        vk.ResetCommandBuffer(
+        deviceApi.vkResetCommandBuffer(
             commandBuffer, /*VkCommandBufferResetFlagBits*/
             0
         );
         recordCommandBuffer(commandBuffer, imageIndex);
 
         var waitSemaphores = stackalloc VkSemaphore[] { imageAvailableSemaphore };
-        var waitStages = stackalloc PipelineStageFlags[]
+        var waitStages = stackalloc VkPipelineStageFlags[]
         {
-            PipelineStageFlags.ColorAttachmentOutputBit,
+            VkPipelineStageFlags.ColorAttachmentOutput,
         };
         var signalSemaphores = stackalloc VkSemaphore[] { renderFinishedSemaphore };
         var cmd = commandBuffer;
-        var submitInfo = new SubmitInfo
+        var submitInfo = new VkSubmitInfo
         {
-            SType = StructureType.SubmitInfo,
-            WaitSemaphoreCount = 1,
-            PWaitSemaphores = waitSemaphores,
-            PWaitDstStageMask = waitStages,
-            CommandBufferCount = 1,
-            PCommandBuffers = &cmd,
-            SignalSemaphoreCount = 1,
-            PSignalSemaphores = signalSemaphores,
+            sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+            waitSemaphoreCount = 1,
+            pWaitSemaphores = waitSemaphores,
+            pWaitDstStageMask = waitStages,
+            commandBufferCount = 1,
+            pCommandBuffers = &cmd,
+            signalSemaphoreCount = 1,
+            pSignalSemaphores = signalSemaphores,
         };
-        if (vk.QueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFence) != Result.Success)
+        if (deviceApi.vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFence) != VK_SUCCESS)
         {
             throw new Exception("failed to submit draw command buffer!");
         }
 
-        var swapChains = stackalloc SwapchainKHR[] { swapChain };
-        var presentInfo = new PresentInfoKHR
+        var swapChains = stackalloc VkSwapchainKHR[] { swapChain };
+        var presentInfo = new VkPresentInfoKHR
         {
-            SType = StructureType.PresentInfoKhr,
-            WaitSemaphoreCount = 1,
-            PWaitSemaphores = signalSemaphores,
-            SwapchainCount = 1,
-            PSwapchains = swapChains,
-            PImageIndices = &imageIndex,
+            sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+            waitSemaphoreCount = 1,
+            pWaitSemaphores = signalSemaphores,
+            swapchainCount = 1,
+            pSwapchains = swapChains,
+            pImageIndices = &imageIndex,
         };
 
-        khrSwapchain.QueuePresent(presentQueue, &presentInfo);
+        deviceApi.vkQueuePresentKHR(presentQueue, &presentInfo);
     }
 
-    ShaderModule createShaderModule(ReadOnlySpan<byte> code)
+    VkShaderModule createShaderModule(ReadOnlySpan<byte> code)
     {
         fixed (byte* pCode = code)
         {
-            var createInfo = new ShaderModuleCreateInfo
+            var createInfo = new VkShaderModuleCreateInfo
             {
-                SType = StructureType.ShaderModuleCreateInfo,
-                CodeSize = (uint)code.Length,
-                PCode = (uint*)pCode,
+                sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+                codeSize = (uint)code.Length,
+                pCode = (uint*)pCode,
             };
 
             if (
-                vk.CreateShaderModule(device, &createInfo, null, out var shaderModule)
-                != Result.Success
+                deviceApi.vkCreateShaderModule(&createInfo, null, out var shaderModule)
+                != VK_SUCCESS
             )
             {
                 throw new Exception("failed to create shader module!");
@@ -984,13 +1006,13 @@ unsafe class HelloTriangleApplication
         }
     }
 
-    SurfaceFormatKHR chooseSwapSurfaceFormat(ReadOnlySpan<SurfaceFormatKHR> availableFormats)
+    VkSurfaceFormatKHR chooseSwapSurfaceFormat(ReadOnlySpan<VkSurfaceFormatKHR> availableFormats)
     {
         foreach (var availableFormat in availableFormats)
         {
             if (
-                availableFormat.Format == Format.B8G8R8A8Srgb
-                && availableFormat.ColorSpace == ColorSpaceKHR.SpaceSrgbNonlinearKhr
+                availableFormat.format == VkFormat.B8G8R8A8Srgb
+                && availableFormat.colorSpace == VkColorSpaceKHR.SrgbNonLinear
             )
             {
                 return availableFormat;
@@ -1000,61 +1022,75 @@ unsafe class HelloTriangleApplication
         return availableFormats[0];
     }
 
-    PresentModeKHR chooseSwapPresentMode(ReadOnlySpan<PresentModeKHR> availablePresentModes)
+    VkPresentModeKHR chooseSwapPresentMode(ReadOnlySpan<VkPresentModeKHR> availablePresentModes)
     {
         foreach (var availablePresentMode in availablePresentModes)
         {
-            if (availablePresentMode == PresentModeKHR.MailboxKhr)
+            if (availablePresentMode == VkPresentModeKHR.Mailbox)
             {
                 return availablePresentMode;
             }
         }
 
-        return PresentModeKHR.FifoKhr;
+        return VkPresentModeKHR.Fifo;
     }
 
-    Extent2D chooseSwapExtent(SurfaceCapabilitiesKHR capabilities)
+    VkExtent2D chooseSwapExtent(VkSurfaceCapabilitiesKHR capabilities)
     {
-        if (capabilities.CurrentExtent.Width != uint.MaxValue)
+        if (capabilities.currentExtent.width != uint.MaxValue)
         {
-            return capabilities.CurrentExtent;
+            return capabilities.currentExtent;
         }
         else
         {
             glfw.GetFramebufferSize(window, out var width, out var height);
 
-            var actualExtent = new Extent2D((uint)width, (uint)height);
+            var actualExtent = new VkExtent2D((uint)width, (uint)height);
 
-            actualExtent.Width = Math.Clamp(
-                actualExtent.Width,
-                capabilities.MinImageExtent.Width,
-                capabilities.MaxImageExtent.Width
+            actualExtent.width = Math.Clamp(
+                actualExtent.width,
+                capabilities.minImageExtent.width,
+                capabilities.maxImageExtent.width
             );
-            actualExtent.Height = Math.Clamp(
-                actualExtent.Height,
-                capabilities.MinImageExtent.Height,
-                capabilities.MaxImageExtent.Height
+            actualExtent.height = Math.Clamp(
+                actualExtent.height,
+                capabilities.minImageExtent.height,
+                capabilities.maxImageExtent.height
             );
 
             return actualExtent;
         }
     }
 
-    SwapChainSupportDetails querySwapChainSupport(PhysicalDevice device)
+    SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice physicalDevice)
     {
         SwapChainSupportDetails details = default;
-        khrSurface.GetPhysicalDeviceSurfaceCapabilities(device, surface, &details.capabilities);
+        instanceApi.vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
+            physicalDevice,
+            surface,
+            &details.capabilities
+        );
 
         uint formatCount;
-        khrSurface.GetPhysicalDeviceSurfaceFormats(device, surface, &formatCount, null);
+        instanceApi.vkGetPhysicalDeviceSurfaceFormatsKHR(
+            physicalDevice,
+            surface,
+            &formatCount,
+            null
+        );
 
         if (formatCount != 0)
         {
             // details.formats.resize(formatCount);
-            details.formats = new SurfaceFormatKHR[(int)formatCount];
-            fixed (SurfaceFormatKHR* formats = details.formats)
+            details.formats = new VkSurfaceFormatKHR[(int)formatCount];
+            fixed (VkSurfaceFormatKHR* formats = details.formats)
             {
-                khrSurface.GetPhysicalDeviceSurfaceFormats(device, surface, &formatCount, formats);
+                instanceApi.vkGetPhysicalDeviceSurfaceFormatsKHR(
+                    physicalDevice,
+                    surface,
+                    &formatCount,
+                    formats
+                );
             }
         }
         else
@@ -1063,15 +1099,20 @@ unsafe class HelloTriangleApplication
         }
 
         uint presentModeCount;
-        khrSurface.GetPhysicalDeviceSurfacePresentModes(device, surface, &presentModeCount, null);
+        instanceApi.vkGetPhysicalDeviceSurfacePresentModesKHR(
+            physicalDevice,
+            surface,
+            &presentModeCount,
+            null
+        );
 
         if (presentModeCount != 0)
         {
-            details.presentModes = new PresentModeKHR[(int)presentModeCount];
-            fixed (PresentModeKHR* presentModes = details.presentModes)
+            details.presentModes = new VkPresentModeKHR[(int)presentModeCount];
+            fixed (VkPresentModeKHR* presentModes = details.presentModes)
             {
-                khrSurface.GetPhysicalDeviceSurfacePresentModes(
-                    device,
+                instanceApi.vkGetPhysicalDeviceSurfacePresentModesKHR(
+                    physicalDevice,
                     surface,
                     &presentModeCount,
                     presentModes
@@ -1086,7 +1127,7 @@ unsafe class HelloTriangleApplication
         return details;
     }
 
-    bool isDeviceSuitable(PhysicalDevice physicalDevice)
+    bool isDeviceSuitable(VkPhysicalDevice physicalDevice)
     {
         var indices = findQueueFamilies(physicalDevice);
 
@@ -1103,14 +1144,19 @@ unsafe class HelloTriangleApplication
         return indices.isComplete() && extensionsSupported && swapChainAdequate;
     }
 
-    bool checkDeviceExtensionSupport(PhysicalDevice device)
+    bool checkDeviceExtensionSupport(VkPhysicalDevice physicalDevice)
     {
         uint extensionCount;
-        vk.EnumerateDeviceExtensionProperties(device, (byte*)null, &extensionCount, null);
+        instanceApi.vkEnumerateDeviceExtensionProperties(
+            physicalDevice,
+            null,
+            &extensionCount,
+            null
+        );
 
-        var availableExtensions = stackalloc ExtensionProperties[(int)extensionCount];
-        vk.EnumerateDeviceExtensionProperties(
-            device,
+        var availableExtensions = stackalloc VkExtensionProperties[(int)extensionCount];
+        instanceApi.vkEnumerateDeviceExtensionProperties(
+            physicalDevice,
             (byte*)null,
             &extensionCount,
             availableExtensions
@@ -1120,7 +1166,7 @@ unsafe class HelloTriangleApplication
         for (int i = 0; i < extensionCount; ++i)
         {
             var extensionName =
-                Marshal.PtrToStringAnsi((nint)availableExtensions[i].ExtensionName)
+                Marshal.PtrToStringAnsi((nint)availableExtensions[i].extensionName)
                 ?? throw new Exception();
             requiredExtensions.Remove(extensionName);
         }
@@ -1128,27 +1174,40 @@ unsafe class HelloTriangleApplication
         return requiredExtensions.Count == 0;
     }
 
-    QueueFamilyIndices findQueueFamilies(PhysicalDevice device)
+    QueueFamilyIndices findQueueFamilies(VkPhysicalDevice physicalDevice)
     {
         QueueFamilyIndices indices = default;
 
         uint queueFamilyCount = 0;
-        vk.GetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, null);
+        instanceApi.vkGetPhysicalDeviceQueueFamilyProperties(
+            physicalDevice,
+            &queueFamilyCount,
+            null
+        );
 
-        var queueFamilies = stackalloc QueueFamilyProperties[(int)queueFamilyCount];
-        vk.GetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies);
+        var queueFamilies = stackalloc VkQueueFamilyProperties[(int)queueFamilyCount];
+        instanceApi.vkGetPhysicalDeviceQueueFamilyProperties(
+            physicalDevice,
+            &queueFamilyCount,
+            queueFamilies
+        );
 
         uint i = 0;
         for (int j = 0; j < queueFamilyCount; ++j)
         {
             var queueFamily = queueFamilies[j];
-            if (queueFamily.QueueFlags.HasFlag(QueueFlags.GraphicsBit))
+            if (queueFamily.queueFlags.HasFlag(VkQueueFlags.Graphics))
             {
                 indices.graphicsFamily = i;
             }
 
-            Silk.NET.Core.Bool32 presentSupport = false;
-            khrSurface.GetPhysicalDeviceSurfaceSupport(device, i, surface, &presentSupport);
+            VkBool32 presentSupport = false;
+            instanceApi.vkGetPhysicalDeviceSurfaceSupportKHR(
+                physicalDevice,
+                i,
+                surface,
+                &presentSupport
+            );
 
             if (presentSupport)
             {
@@ -1168,30 +1227,17 @@ unsafe class HelloTriangleApplication
 
     bool checkValidationLayerSupport()
     {
-        uint layerCount;
-        vk.EnumerateInstanceLayerProperties(&layerCount, null);
-
-        var availableLayers = stackalloc LayerProperties[(int)layerCount];
-        vk.EnumerateInstanceLayerProperties(&layerCount, availableLayers);
+        vkEnumerateInstanceLayerProperties(out var layerCount);
+        Span<VkLayerProperties> availableLayers = stackalloc VkLayerProperties[(int)layerCount];
+        vkEnumerateInstanceLayerProperties(availableLayers);
 
         foreach (var layerName in validationLayers)
         {
             bool layerFound = false;
 
-            for (uint i = 0; i < layerCount; ++i)
+            foreach (var available in availableLayers)
             {
-                // find zero
-                int j = 0;
-                for (; j < 256; ++j)
-                {
-                    if (availableLayers[i].LayerName[j] == 0)
-                    {
-                        break;
-                    }
-                }
-                var availableLayerName = Marshal.PtrToStringAnsi(
-                    (nint)availableLayers[i].LayerName
-                );
+                var availableLayerName = Marshal.PtrToStringAnsi((nint)available.layerName);
                 if (layerName == availableLayerName)
                 {
                     layerFound = true;
@@ -1208,17 +1254,18 @@ unsafe class HelloTriangleApplication
         return true;
     }
 
+    [UnmanagedCallersOnly]
     private static uint debugCallback(
-        DebugUtilsMessageSeverityFlagsEXT messageSeverity,
-        DebugUtilsMessageTypeFlagsEXT messageTypes,
-        DebugUtilsMessengerCallbackDataEXT* pCallbackData,
-        void* pUserData
+        VkDebugUtilsMessageSeverityFlagsEXT messageSeverity,
+        VkDebugUtilsMessageTypeFlagsEXT messageTypes,
+        VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+        void* userData
     )
     {
-        var msg = Marshal.PtrToStringAnsi((nint)pCallbackData->PMessage);
+        var msg = Marshal.PtrToStringAnsi((nint)pCallbackData->pMessage);
         Console.Error.WriteLine($"validation layer: {msg}");
 
-        return Vk.False;
+        return VK_FALSE;
     }
 }
 
