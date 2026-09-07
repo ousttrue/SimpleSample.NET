@@ -65,7 +65,6 @@ static unsafe class Program
             vk,
             vk_instance.Device,
             g_MainWindowData.SurfaceFormat.Format,
-            Format.D24UnormS8Uint,
             g_MainWindowData.ImageCount
         );
 

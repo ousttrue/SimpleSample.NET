@@ -1,6 +1,7 @@
 // https://github.com/ocornut/imgui/blob/master/examples/example_glfw_vulkan/main.cpp
 
 using System.Runtime.InteropServices;
+using Silk.NET.Core;
 using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.EXT;
 using Silk.NET.Vulkan.Extensions.KHR;
@@ -31,6 +32,20 @@ unsafe class VulkanInstanceAndDevice : IDisposable
         Console.Error.WriteLine(
             $"Message: {Marshal.PtrToStringAnsi((nint)pMessage) ?? throw new Exception()}"
         );
+        return Vk.False;
+    }
+
+    private static unsafe uint DebugCallback(
+        DebugUtilsMessageSeverityFlagsEXT messageSeverity,
+        DebugUtilsMessageTypeFlagsEXT messageTypes,
+        DebugUtilsMessengerCallbackDataEXT* pCallbackData,
+        void* pUserData
+    )
+    {
+        System.Diagnostics.Debug.WriteLine(
+            $"validation layer:" + Marshal.PtrToStringAnsi((nint)pCallbackData->PMessage)
+        );
+
         return Vk.False;
     }
 
@@ -81,8 +96,10 @@ unsafe class VulkanInstanceAndDevice : IDisposable
 
     public readonly Instance Instance;
 
-    private readonly ExtDebugReport extDebugReport;
-    private readonly DebugReportCallbackEXT g_DebugReport;
+    // private readonly ExtDebugReport extDebugReport;
+    // private readonly DebugReportCallbackEXT g_DebugReport;
+    private readonly ExtDebugUtils extDebugUtils;
+    private readonly DebugUtilsMessengerEXT debugMessenger;
 
     public readonly PhysicalDevice PhysicalDevice;
     public readonly uint QueueFamily = uint.MaxValue;
@@ -95,13 +112,31 @@ unsafe class VulkanInstanceAndDevice : IDisposable
     public const uint IMGUI_IMPL_VULKAN_MINIMUM_SAMPLER_POOL_SIZE = 2; // Minimum for linear + nearest
     public readonly DescriptorPool DescriptorPool;
 
-    public VulkanInstanceAndDevice(Vk _vk, ByteStringArrayAllocator instance_extensions, bool useDynamicRendering)
+    public VulkanInstanceAndDevice(
+        Vk _vk,
+        ByteStringArrayAllocator instance_extensions,
+        bool useDynamicRendering
+    )
     {
         vk = _vk;
 
         // Create Vulkan Instance
         {
-            var create_info = new InstanceCreateInfo { SType = StructureType.InstanceCreateInfo };
+            ApplicationInfo appInfo = new()
+            {
+                SType = StructureType.ApplicationInfo,
+                PApplicationName = (byte*)Marshal.StringToHGlobalAnsi("Hello Triangle"),
+                ApplicationVersion = new Version32(1, 0, 0),
+                PEngineName = (byte*)Marshal.StringToHGlobalAnsi("No Engine"),
+                EngineVersion = new Version32(1, 0, 0),
+                ApiVersion = Vk.Version13, // requierd for DynamicRendering
+            };
+
+            var create_info = new InstanceCreateInfo
+            {
+                SType = StructureType.InstanceCreateInfo,
+                PApplicationInfo = &appInfo,
+            };
 
             // Enumerate available extensions
             uint properties_count;
@@ -130,12 +165,14 @@ unsafe class VulkanInstanceAndDevice : IDisposable
             var layers = new ByteStringArrayAllocator() { "VK_LAYER_KHRONOS_validation" };
             (create_info.EnabledLayerCount, create_info.PpEnabledLayerNames) = layers;
             instance_extensions.Add("VK_EXT_debug_report");
+            instance_extensions.Add(ExtDebugUtils.ExtensionName);
 
             // Create Vulkan Instance
             (create_info.EnabledExtensionCount, create_info.PpEnabledExtensionNames) =
                 instance_extensions;
             vk.CreateInstance(&create_info, default, out Instance).ThrowIfError();
 
+#if false
             if (!vk.TryGetInstanceExtension(Instance, out extDebugReport))
             {
                 throw new Exception("TryGetInstanceExtension<ExtDebugReport>");
@@ -154,6 +191,31 @@ unsafe class VulkanInstanceAndDevice : IDisposable
             extDebugReport
                 .CreateDebugReportCallback(Instance, &debug_report_ci, default, out g_DebugReport)
                 .ThrowIfError();
+#endif
+
+            if (!vk.TryGetInstanceExtension(Instance, out extDebugUtils))
+            {
+                throw new Exception("TryGetInstanceExtension<ExtDebugUtils>");
+            }
+            var createInfo = new DebugUtilsMessengerCreateInfoEXT
+            {
+                SType = StructureType.DebugUtilsMessengerCreateInfoExt,
+                MessageSeverity =
+                    DebugUtilsMessageSeverityFlagsEXT.VerboseBitExt
+                    | DebugUtilsMessageSeverityFlagsEXT.WarningBitExt
+                    | DebugUtilsMessageSeverityFlagsEXT.ErrorBitExt,
+                MessageType =
+                    DebugUtilsMessageTypeFlagsEXT.GeneralBitExt
+                    | DebugUtilsMessageTypeFlagsEXT.PerformanceBitExt
+                    | DebugUtilsMessageTypeFlagsEXT.ValidationBitExt,
+                PfnUserCallback = (DebugUtilsMessengerCallbackFunctionEXT)DebugCallback,
+            };
+            extDebugUtils.CreateDebugUtilsMessenger(
+                Instance,
+                ref createInfo,
+                default,
+                out debugMessenger
+            );
         }
 
         // Select Physical Device (GPU)
@@ -259,7 +321,8 @@ unsafe class VulkanInstanceAndDevice : IDisposable
         vk.DestroyDescriptorPool(Device, DescriptorPool, default);
 
         // Remove the debug report callback
-        extDebugReport.DestroyDebugReportCallback(Instance, g_DebugReport, default);
+        // extDebugReport.DestroyDebugReportCallback(Instance, g_DebugReport, default);
+        extDebugUtils.DestroyDebugUtilsMessenger(Instance, debugMessenger, default);
 
         vk.DestroyDevice(Device, default);
         vk.DestroyInstance(Instance, default);

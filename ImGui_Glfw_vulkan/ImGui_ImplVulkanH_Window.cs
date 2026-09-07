@@ -17,7 +17,7 @@ class ImGui_ImplVulkanH_Window : IDisposable
     private readonly KhrSwapchain khrSwapchain;
 
     // Input
-    bool UseDynamicRendering;
+    bool UseDynamicRendering = true;
     SurfaceKHR Surface; // Surface created and destroyed by caller.
     public SurfaceFormatKHR SurfaceFormat;
     PresentModeKHR PresentMode; // Ensure we get an error if user doesn't set this.
@@ -39,7 +39,8 @@ class ImGui_ImplVulkanH_Window : IDisposable
     public int Width; // Generally same as passed to ImGui_ImplVulkanH_CreateOrResizeWindow()
     public int Height;
     SwapchainKHR Swapchain;
-    public RenderPass RenderPass;
+
+    // public RenderPass RenderPass;
 
     // Pipeline Pipeline; // The window pipeline may uses a different VkRenderPass than the one passed in ImGui_ImplVulkan_InitInfo
     public uint FrameIndex; // Current frame being rendered to (0 <= FrameIndex < FrameInFlightCount)
@@ -54,7 +55,7 @@ class ImGui_ImplVulkanH_Window : IDisposable
         public Fence Fence;
         public Image Backbuffer;
         public ImageView BackbufferView;
-        public Framebuffer Framebuffer;
+        // public Framebuffer Framebuffer;
     };
 
     List<ImGui_ImplVulkanH_Frame> Frames = [];
@@ -172,7 +173,7 @@ class ImGui_ImplVulkanH_Window : IDisposable
         fd.CommandPool = default;
 
         vk.DestroyImageView(device, fd.BackbufferView, default);
-        vk.DestroyFramebuffer(device, fd.Framebuffer, default);
+        // vk.DestroyFramebuffer(device, fd.Framebuffer, default);
     }
 
     unsafe void ImGui_ImplVulkanH_DestroyFrameSemaphores(
@@ -222,8 +223,8 @@ class ImGui_ImplVulkanH_Window : IDisposable
         Frames.Clear();
         FrameSemaphores.Clear();
         ImageCount = 0;
-        if (RenderPass is RenderPass renderPass)
-            vk.DestroyRenderPass(device, renderPass, default);
+        // if (RenderPass is RenderPass renderPass)
+        //     vk.DestroyRenderPass(device, renderPass, default);
 
         // If min image count was not specified, request different count of images dependent on selected present mode
         if (min_image_count == 0)
@@ -309,47 +310,47 @@ class ImGui_ImplVulkanH_Window : IDisposable
             khrSwapchain.DestroySwapchain(device, _old_swapchain, default);
 
         // Create the Render Pass
-        if (UseDynamicRendering == false)
-        {
-            var attachment = AttachmentDesc;
-            if (attachment.Format == Format.Undefined)
-                attachment.Format = SurfaceFormat.Format;
-            var color_attachment = new AttachmentReference
-            {
-                Attachment = 0,
-                Layout = ImageLayout.ColorAttachmentOptimal,
-            };
-            var subpass = new SubpassDescription
-            {
-                PipelineBindPoint = PipelineBindPoint.Graphics,
-                ColorAttachmentCount = 1,
-                PColorAttachments = &color_attachment,
-            };
-            var dependency = new SubpassDependency
-            {
-                SrcSubpass = Vk.SubpassExternal,
-                DstSubpass = 0,
-                SrcStageMask = PipelineStageFlags.ColorAttachmentOutputBit,
-                DstStageMask = PipelineStageFlags.ColorAttachmentOutputBit,
-                SrcAccessMask = 0,
-                DstAccessMask = AccessFlags.ColorAttachmentWriteBit,
-            };
-            var info = new RenderPassCreateInfo
-            {
-                SType = StructureType.RenderPassCreateInfo,
-                AttachmentCount = 1,
-                PAttachments = &attachment,
-                SubpassCount = 1,
-                PSubpasses = &subpass,
-                DependencyCount = 1,
-                PDependencies = &dependency,
-            };
-            vk.CreateRenderPass(device, &info, default, out RenderPass).ThrowIfError();
+        // if (UseDynamicRendering == false)
+        // {
+        //     var attachment = AttachmentDesc;
+        //     if (attachment.Format == Format.Undefined)
+        //         attachment.Format = SurfaceFormat.Format;
+        //     var color_attachment = new AttachmentReference
+        //     {
+        //         Attachment = 0,
+        //         Layout = ImageLayout.ColorAttachmentOptimal,
+        //     };
+        //     var subpass = new SubpassDescription
+        //     {
+        //         PipelineBindPoint = PipelineBindPoint.Graphics,
+        //         ColorAttachmentCount = 1,
+        //         PColorAttachments = &color_attachment,
+        //     };
+        //     var dependency = new SubpassDependency
+        //     {
+        //         SrcSubpass = Vk.SubpassExternal,
+        //         DstSubpass = 0,
+        //         SrcStageMask = PipelineStageFlags.ColorAttachmentOutputBit,
+        //         DstStageMask = PipelineStageFlags.ColorAttachmentOutputBit,
+        //         SrcAccessMask = 0,
+        //         DstAccessMask = AccessFlags.ColorAttachmentWriteBit,
+        //     };
+        //     var info = new RenderPassCreateInfo
+        //     {
+        //         SType = StructureType.RenderPassCreateInfo,
+        //         AttachmentCount = 1,
+        //         PAttachments = &attachment,
+        //         SubpassCount = 1,
+        //         PSubpasses = &subpass,
+        //         DependencyCount = 1,
+        //         PDependencies = &dependency,
+        //     };
+        //     vk.CreateRenderPass(device, &info, default, out RenderPass).ThrowIfError();
 
-            // We do not create a pipeline by default as this is also used by examples' main.cpp,
-            // but secondary viewport in multi-viewport mode may want to create one with:
-            //ImGui_ImplVulkan_CreatePipeline(device, default, VK_NULL_HANDLE, wd.RenderPass, VK_SAMPLE_COUNT_1_BIT, &wd.Pipeline, v.Subpass);
-        }
+        //     // We do not create a pipeline by default as this is also used by examples' main.cpp,
+        //     // but secondary viewport in multi-viewport mode may want to create one with:
+        //     //ImGui_ImplVulkan_CreatePipeline(device, default, VK_NULL_HANDLE, wd.RenderPass, VK_SAMPLE_COUNT_1_BIT, &wd.Pipeline, v.Subpass);
+        // }
 
         // Create The Image Views
         {
@@ -383,26 +384,26 @@ class ImGui_ImplVulkanH_Window : IDisposable
         }
 
         // Create Framebuffer
-        if (UseDynamicRendering == false)
-        {
-            var attachment = stackalloc ImageView[1];
-            var info = new FramebufferCreateInfo
-            {
-                SType = StructureType.FramebufferCreateInfo,
-                RenderPass = RenderPass,
-                AttachmentCount = 1,
-                PAttachments = attachment,
-                Width = (uint)Width,
-                Height = (uint)Height,
-                Layers = 1,
-            };
-            for (int i = 0; i < ImageCount; i++)
-            {
-                var fd = Frames[i];
-                attachment[0] = fd.BackbufferView;
-                vk.CreateFramebuffer(device, &info, default, out fd.Framebuffer).ThrowIfError();
-            }
-        }
+        // if (UseDynamicRendering == false)
+        // {
+        //     var attachment = stackalloc ImageView[1];
+        //     var info = new FramebufferCreateInfo
+        //     {
+        //         SType = StructureType.FramebufferCreateInfo,
+        //         RenderPass = RenderPass,
+        //         AttachmentCount = 1,
+        //         PAttachments = attachment,
+        //         Width = (uint)Width,
+        //         Height = (uint)Height,
+        //         Layers = 1,
+        //     };
+        //     for (int i = 0; i < ImageCount; i++)
+        //     {
+        //         var fd = Frames[i];
+        //         attachment[0] = fd.BackbufferView;
+        //         vk.CreateFramebuffer(device, &info, default, out fd.Framebuffer).ThrowIfError();
+        //     }
+        // }
     }
 
     private unsafe void ImGui_ImplVulkanH_CreateWindowCommandBuffers(
@@ -686,10 +687,10 @@ class ImGui_ImplVulkanH_Window : IDisposable
             ImGui_ImplVulkanH_DestroyFrameSemaphores(device, FrameSemaphores[i]);
         Frames.Clear();
         FrameSemaphores.Clear();
-        vk.DestroyRenderPass(device, RenderPass, default);
         khrSwapchain.DestroySwapchain(device, Swapchain, default);
-        RenderPass = default;
         Swapchain = default;
+        // vk.DestroyRenderPass(device, RenderPass, default);
+        // RenderPass = default;
         Width = Height = 0;
         FrameIndex = 0;
         ImageCount = 0;
@@ -756,20 +757,64 @@ class ImGui_ImplVulkanH_Window : IDisposable
             };
             vk.BeginCommandBuffer(fd.CommandBuffer, &info).ThrowIfError();
         }
+        if (UseDynamicRendering)
         {
-            var info = new RenderPassBeginInfo
+            var color_attachment_info = new RenderingAttachmentInfo
             {
-                SType = StructureType.RenderPassBeginInfo,
-                RenderPass = RenderPass,
-                Framebuffer = fd.Framebuffer,
-                RenderArea = new Rect2D
+                SType = StructureType.RenderingAttachmentInfo,
+                ImageView = fd.BackbufferView,
+                ImageLayout = ImageLayout.ColorAttachmentOptimal,
+                LoadOp = AttachmentLoadOp.Clear,
+                StoreOp = AttachmentStoreOp.Store,
+                ClearValue = clearValue,
+            };
+            // var depth_attachment_info = new RenderingAttachmentInfo()
+            // {
+            //     SType = StructureType.RenderingAttachmentInfo,
+            //     ImageView = DepthImageView,
+            //     ImageLayout = ImageLayout.DepthAttachmentOptimal,
+            //     LoadOp = depthLoadOp,
+            //     StoreOp = depthStoreOp,
+            //     ClearValue = new ClearValue { DepthStencil = clearDepthStencil },
+            // };
+            var render_info = new RenderingInfo
+            {
+                SType = StructureType.RenderingInfo,
+                RenderArea = new()
                 {
                     Extent = new Extent2D { Width = (uint)Width, Height = (uint)Height },
                 },
-                ClearValueCount = 1,
-                PClearValues = &clearValue,
+                LayerCount = 1,
+                ColorAttachmentCount = 1,
+                PColorAttachments = &color_attachment_info,
+                // PDepthAttachment = &depth_attachment_info,
+                // PStencilAttachment = &depth_attachment_info,
             };
-            vk.CmdBeginRenderPass(fd.CommandBuffer, &info, SubpassContents.Inline);
+
+            // TransitionImageLayout(
+            //     vk,
+            //     fd.CommandBuffer,
+            //     fd.Backbuffer,
+            //     ImageLayout.ColorAttachmentOptimal
+            // );
+            vk.CmdBeginRendering(fd.CommandBuffer, &render_info);
+        }
+        else
+        {
+            throw new NotImplementedException();
+            // var info = new RenderPassBeginInfo
+            // {
+            //     SType = StructureType.RenderPassBeginInfo,
+            //     RenderPass = RenderPass,
+            //     Framebuffer = fd.Framebuffer,
+            //     RenderArea = new Rect2D
+            //     {
+            //         Extent = new Extent2D { Width = (uint)Width, Height = (uint)Height },
+            //     },
+            //     ClearValueCount = 1,
+            //     PClearValues = &clearValue,
+            // };
+            // vk.CmdBeginRenderPass(fd.CommandBuffer, &info, SubpassContents.Inline);
         }
         return (frameIndex, image_acquired_semaphore, render_complete_semaphore, fd.CommandBuffer);
     }
@@ -784,7 +829,16 @@ class ImGui_ImplVulkanH_Window : IDisposable
         //     ImGui_ImplVulkan_RenderDrawData(draw_data, fd.CommandBuffer);
 
         // Submit command buffer
-        vk.CmdEndRenderPass(fd.CommandBuffer);
+        if (UseDynamicRendering)
+        {
+            vk.CmdEndRendering(fd.CommandBuffer);
+            TransitionImageLayout(vk, fd.CommandBuffer, fd.Backbuffer, ImageLayout.PresentSrcKhr);
+        }
+        else
+        {
+            throw new NotImplementedException();
+            vk.CmdEndRenderPass(fd.CommandBuffer);
+        }
         {
             var commandBuffer = fd.CommandBuffer;
             var wait_stage = PipelineStageFlags.ColorAttachmentOutputBit;
@@ -828,5 +882,44 @@ class ImGui_ImplVulkanH_Window : IDisposable
                 err.ThrowIfError();
             SemaphoreIndex = (SemaphoreIndex + 1) % SemaphoreCount; // Now we can use the next set of semaphores
         }
+    }
+
+    public static unsafe void TransitionImageLayout(
+        Vk vk,
+        CommandBuffer commandBuffer,
+        Image image,
+        ImageLayout newLayout
+    )
+    {
+        ImageMemoryBarrier barrier = new()
+        {
+            SType = StructureType.ImageMemoryBarrier,
+            OldLayout = ImageLayout.Undefined,
+            NewLayout = newLayout,
+            SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
+            DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
+            Image = image,
+            SubresourceRange =
+            {
+                AspectMask = ImageAspectFlags.ColorBit,
+                BaseMipLevel = 0,
+                LevelCount = 1,
+                BaseArrayLayer = 0,
+                LayerCount = 1,
+            },
+        };
+
+        vk.CmdPipelineBarrier(
+            commandBuffer,
+            PipelineStageFlags.BottomOfPipeBit,
+            PipelineStageFlags.TopOfPipeBit,
+            0,
+            0,
+            null,
+            0,
+            null,
+            1,
+            in barrier
+        );
     }
 }

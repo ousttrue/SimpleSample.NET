@@ -21,6 +21,11 @@ public class VkPipeline<CONSTANT> : IDisposable
         ImageView depthImageView
     ) { }
 
+    public record struct DepthStencilInfo(
+        Format depthFormat,
+        PipelineDepthStencilStateCreateInfo depthStencil
+    ) { }
+
     public unsafe VkPipeline(
         Vk vk,
         Device device,
@@ -32,8 +37,7 @@ public class VkPipeline<CONSTANT> : IDisposable
         uint maxFlightCount,
         ReadOnlySpan<DescriptorSetLayoutBinding> descriptorSetLayoutBindings,
         Format colorFormat,
-        Format depthFormat,
-        PipelineDepthStencilStateCreateInfo depthStencil
+        DepthStencilInfo? depthStencil
     )
     {
         _vk = vk;
@@ -225,7 +229,6 @@ public class VkPipeline<CONSTANT> : IDisposable
                 PViewportState = &viewportState,
                 PRasterizationState = &rasterizer,
                 PMultisampleState = &multisampling,
-                PDepthStencilState = &depthStencil,
                 PColorBlendState = &colorBlending,
                 PDynamicState = &dynamicState,
                 Layout = PipelieLayout,
@@ -237,9 +240,16 @@ public class VkPipeline<CONSTANT> : IDisposable
                 SType = StructureType.PipelineRenderingCreateInfo,
                 ColorAttachmentCount = 1,
                 PColorAttachmentFormats = &colorFormat,
-                DepthAttachmentFormat = depthFormat,
-                StencilAttachmentFormat = depthFormat,
             };
+            if (
+                depthStencil is
+                (Format depthFormat, PipelineDepthStencilStateCreateInfo depthStencilInfo)
+            )
+            {
+                pipelineInfo.PDepthStencilState = &depthStencilInfo;
+                pipelineRenderingCreate.DepthAttachmentFormat = depthFormat;
+                pipelineRenderingCreate.StencilAttachmentFormat = depthFormat;
+            }
             {
                 // vulkan-1.3 dynamic rendering(without RenderPass and FrameBuffer)
                 pipelineInfo.PNext = &pipelineRenderingCreate;

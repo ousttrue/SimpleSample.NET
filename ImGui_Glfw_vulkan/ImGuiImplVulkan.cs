@@ -65,8 +65,8 @@ public class ImGuiImplVulkan : IDisposable
         Vk vk,
         Device device,
         Format colorFormat,
-        Format depthFormat,
-        uint swapchainImageCount
+        uint swapchainImageCount,
+        Format? depthFormat = default
     )
     {
         _vk = vk;
@@ -92,11 +92,12 @@ public class ImGuiImplVulkan : IDisposable
             swapchainImageCount,
             bindings,
             colorFormat,
-            depthFormat,
-            new PipelineDepthStencilStateCreateInfo
-            {
-                SType = StructureType.PipelineDepthStencilStateCreateInfo,
-            }
+            default
+            // depthFormat,
+            // new PipelineDepthStencilStateCreateInfo
+            // {
+            //     SType = StructureType.PipelineDepthStencilStateCreateInfo,
+            // }
         );
 
         //
