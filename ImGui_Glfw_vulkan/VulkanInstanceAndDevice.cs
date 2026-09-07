@@ -119,6 +119,7 @@ unsafe class VulkanInstanceAndDevice : IDisposable
     )
     {
         vk = _vk;
+        var layers = new ByteStringArrayAllocator() { "VK_LAYER_KHRONOS_validation" };
 
         // Create Vulkan Instance
         {
@@ -162,7 +163,6 @@ unsafe class VulkanInstanceAndDevice : IDisposable
             // #endif
 
             // Enabling validation layers
-            var layers = new ByteStringArrayAllocator() { "VK_LAYER_KHRONOS_validation" };
             (create_info.EnabledLayerCount, create_info.PpEnabledLayerNames) = layers;
             instance_extensions.Add("VK_EXT_debug_report");
             instance_extensions.Add(ExtDebugUtils.ExtensionName);
@@ -260,6 +260,7 @@ unsafe class VulkanInstanceAndDevice : IDisposable
                 QueueCreateInfoCount = 1,
                 PQueueCreateInfos = queue_info,
             };
+            // (create_info.EnabledLayerCount, create_info.PpEnabledLayerNames) = layers;
             (create_info.EnabledExtensionCount, create_info.PpEnabledExtensionNames) =
                 device_extensions;
 

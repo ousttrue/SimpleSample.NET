@@ -6,3 +6,5 @@ https://github.com/ocornut/imgui/blob/master/backends/imgui_impl_vulkan.cpp
 - https://github.com/stymee/SilkVulkanTutorial/tree/master/Source/Sandbox02ImGui/Systems/ImGui
 
 を参考にした。
+本実装が `Silk.NET.GLFW` を使うのに対して、ImGuiController は `Silk.NET.Windowing.IWindow` を使うのが違い。
+`Silk.NET.Windowing.IWindow` は SDL と GLFW をラップして隠ぺいするインターフェースぽい。

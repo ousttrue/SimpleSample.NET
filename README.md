@@ -34,6 +34,13 @@ https://www.glfw.org/docs/latest/quick.html
 
 - vulkan-1.3 により RenderPass の作成を回避する。
 
+window の resize による swapchain の再作成は Image の更新を引き起こして、
+Image に依存するリソースの再作成を連鎖させる。
+Image や Image サイズなどに依存する ImageView, FrameBuffer, RenderPass, Pipeline の再作成へと波及する。
+
+Dynamic Rendering を使うと FrameBuffer と RenderPass が消滅し、Pipeline の RenderPass への依存が無くなる。
+Pipeline の Image (ColorAttachment) への依存が、Create 時から BeginRendering 時へと移動する。
+
 ## slnx
 
 C# ソリューション。たぶん、無くても動くが Editor の language server の

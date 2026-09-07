@@ -632,16 +632,16 @@ class ImGui_ImplVulkanH_Window : IDisposable
         );
 
         // Select Present Mode
-        // #ifdef APP_USE_UNLIMITED_FRAME_RATE
+#if APP_USE_UNLIMITED_FRAME_RATE
         ReadOnlySpan<PresentModeKHR> present_modes =
         [
             PresentModeKHR.MailboxKhr,
             PresentModeKHR.ImmediateKhr,
             PresentModeKHR.FifoKhr,
         ];
-        // #else
-        //     VkPresentModeKHR present_modes[] = { VK_PRESENT_MODE_FIFO_KHR };
-        // #endif
+#else
+        ReadOnlySpan<PresentModeKHR> present_modes = [PresentModeKHR.FifoKhr];
+#endif
         PresentMode = ImGui_ImplVulkanH_SelectPresentMode(PhysicalDevice, Surface, present_modes);
         //printf("[vulkan] Selected PresentMode = %d\n", wd.PresentMode);
 
