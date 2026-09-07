@@ -95,7 +95,7 @@ unsafe class VulkanInstanceAndDevice : IDisposable
     public const uint IMGUI_IMPL_VULKAN_MINIMUM_SAMPLER_POOL_SIZE = 2; // Minimum for linear + nearest
     public readonly DescriptorPool DescriptorPool;
 
-    public VulkanInstanceAndDevice(Vk _vk, ByteStringArrayAllocator instance_extensions)
+    public VulkanInstanceAndDevice(Vk _vk, ByteStringArrayAllocator instance_extensions, bool useDynamicRendering)
     {
         vk = _vk;
 
@@ -152,12 +152,7 @@ unsafe class VulkanInstanceAndDevice : IDisposable
                 PUserData = null,
             };
             extDebugReport
-                .CreateDebugReportCallback(
-                    Instance,
-                    &debug_report_ci,
-                    default,
-                    out g_DebugReport
-                )
+                .CreateDebugReportCallback(Instance, &debug_report_ci, default, out g_DebugReport)
                 .ThrowIfError();
         }
 
@@ -206,6 +201,25 @@ unsafe class VulkanInstanceAndDevice : IDisposable
             (create_info.EnabledExtensionCount, create_info.PpEnabledExtensionNames) =
                 device_extensions;
 
+            if (useDynamicRendering)
+            {
+                var ext_feature = new PhysicalDeviceDynamicRenderingFeatures()
+                {
+                    SType = StructureType.PhysicalDeviceDynamicRenderingFeatures,
+                };
+                var physical_features2 = new PhysicalDeviceFeatures2
+                {
+                    SType = StructureType.PhysicalDeviceFeatures2,
+                    PNext = &ext_feature,
+                };
+                _vk.GetPhysicalDeviceFeatures2(PhysicalDevice, &physical_features2);
+                if (!ext_feature.DynamicRendering)
+                {
+                    throw new Exception();
+                }
+                create_info.PNext = &physical_features2;
+            }
+
             vk.CreateDevice(PhysicalDevice, &create_info, default, out Device).ThrowIfError();
             vk.GetDeviceQueue(Device, QueueFamily, 0, out Queue);
         }
@@ -236,8 +250,7 @@ unsafe class VulkanInstanceAndDevice : IDisposable
                 pool_info.MaxSets += pool_sizes[i].DescriptorCount;
             pool_info.PoolSizeCount = 2;
             pool_info.PPoolSizes = pool_sizes;
-            vk.CreateDescriptorPool(Device, &pool_info, default, out DescriptorPool)
-                .ThrowIfError();
+            vk.CreateDescriptorPool(Device, &pool_info, default, out DescriptorPool).ThrowIfError();
         }
     }
 

@@ -27,7 +27,11 @@ static unsafe class Program
         var glfw_extensions = glfw_window.GetVulkanInstanceExtensions();
 
         var vk = Vk.GetApi() ?? throw new NullReferenceException();
-        using var vk_instance = new VulkanInstanceAndDevice(vk, glfw_extensions);
+        using var vk_instance = new VulkanInstanceAndDevice(
+            vk,
+            glfw_extensions,
+            useDynamicRendering: true
+        );
 
         // Create Window Surface
         glfw_window.CreateSurface(vk_instance.Instance, out var surface).ThrowIfError();
