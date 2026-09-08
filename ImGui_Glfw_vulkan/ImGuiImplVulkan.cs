@@ -3,17 +3,18 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using ImGuiNET;
-using Silk.NET.Vulkan;
+using Vortice.Vulkan;
+using static Vortice.Vulkan.Vulkan;
 
 public class ImGuiImplVulkan : IDisposable
 {
-    private readonly Vk _vk;
-    private readonly Device _device;
+    private readonly VkDeviceApi _vd;
+    private readonly VkDevice _device;
 
     private const int maxSets = 255;
-    private readonly DescriptorPool _descriptorPool;
-    private readonly DescriptorSet[] _descriptorSets;
-    private readonly List<DescriptorSet> _descriptorSetPool = new();
+    private readonly VkDescriptorPool _descriptorPool;
+    private readonly VkDescriptorSet[] _descriptorSets;
+    private readonly List<VkDescriptorSet> _descriptorSetPool = new();
 
     record struct Constant(Vector2 Scale, Vector2 Translate) { }
 
@@ -23,109 +24,109 @@ public class ImGuiImplVulkan : IDisposable
     private readonly ImDrawVertBuffer[] _vertBuffers;
 
     // DescriptorSetLayout
-    private readonly DescriptorSetLayoutBinding[] bindings =
+    private readonly VkDescriptorSetLayoutBinding[] bindings =
     [
-        new DescriptorSetLayoutBinding
+        new()
         {
-            DescriptorType = DescriptorType.CombinedImageSampler,
-            DescriptorCount = 1,
-            StageFlags = ShaderStageFlags.FragmentBit,
+            descriptorType = VkDescriptorType.CombinedImageSampler,
+            descriptorCount = 1,
+            stageFlags = VkShaderStageFlags.Fragment,
         },
     ];
 
     // VertexInput
-    static readonly VertexInputBindingDescription binding_desc = new VertexInputBindingDescription
+    static readonly VkVertexInputBindingDescription binding_desc = new()
     {
-        Stride = (uint)Unsafe.SizeOf<ImDrawVert>(),
-        InputRate = VertexInputRate.Vertex,
+        stride = (uint)Unsafe.SizeOf<ImDrawVert>(),
+        inputRate = VkVertexInputRate.Vertex,
     };
-    static readonly VertexInputAttributeDescription[] attribute_desc =
+    static readonly VkVertexInputAttributeDescription[] attribute_desc =
     [
-        new VertexInputAttributeDescription
+        new()
         {
-            Location = 0,
-            Format = Format.R32G32Sfloat,
-            Offset = (uint)Marshal.OffsetOf<ImDrawVert>(nameof(ImDrawVert.pos)),
+            location = 0,
+            format = VkFormat.R32G32Sfloat,
+            offset = (uint)Marshal.OffsetOf<ImDrawVert>(nameof(ImDrawVert.pos)),
         },
-        new VertexInputAttributeDescription
+        new()
         {
-            Location = 1,
-            Format = Format.R32G32Sfloat,
-            Offset = (uint)Marshal.OffsetOf<ImDrawVert>(nameof(ImDrawVert.uv)),
+            location = 1,
+            format = VkFormat.R32G32Sfloat,
+            offset = (uint)Marshal.OffsetOf<ImDrawVert>(nameof(ImDrawVert.uv)),
         },
-        new VertexInputAttributeDescription
+        new()
         {
-            Location = 2,
-            Format = Format.R8G8B8A8Unorm,
-            Offset = (uint)Marshal.OffsetOf<ImDrawVert>(nameof(ImDrawVert.col)),
+            location = 2,
+            format = VkFormat.R8G8B8A8Unorm,
+            offset = (uint)Marshal.OffsetOf<ImDrawVert>(nameof(ImDrawVert.col)),
         },
     ];
 
     public unsafe ImGuiImplVulkan(
-        Vk vk,
-        Device device,
-        Format colorFormat,
+        VkInstanceApi vi,
+        VkDeviceApi vd,
+        VkDevice device,
+        VkFormat colorFormat,
         uint swapchainImageCount,
-        Format? depthFormat = default
+        VkFormat? depthFormat = default
     )
     {
-        _vk = vk;
+        _vd = vd;
         _device = device;
 
         _vertBuffers = new ImDrawVertBuffer[swapchainImageCount];
         for (int i = 0; i < _vertBuffers.Length; ++i)
         {
-            _vertBuffers[i] = new(_vk, _device);
+            _vertBuffers[i] = new(vi, vd, _device);
         }
         _vertBufferIndex = 0;
 
-        using var vs = new VkShaderModule(_vk, _device, FromAssembly("glsl_shader.vert.spv"));
-        using var fs = new VkShaderModule(_vk, _device, FromAssembly("glsl_shader.frag.spv"));
+        using var vs = new ShaderModuleObject(_vd, _device, FromAssembly("glsl_shader.vert.spv"));
+        using var fs = new ShaderModuleObject(_vd, _device, FromAssembly("glsl_shader.frag.spv"));
         _pipeline = new(
-            _vk,
+            _vd,
             _device,
-            vs,
-            fs,
-            PrimitiveTopology.TriangleList,
+            vs.Module,
+            fs.Module,
+            VkPrimitiveTopology.TriangleList,
             binding_desc,
             attribute_desc,
             swapchainImageCount,
             bindings,
             colorFormat,
             default
-            // depthFormat,
-            // new PipelineDepthStencilStateCreateInfo
-            // {
-            //     SType = StructureType.PipelineDepthStencilStateCreateInfo,
-            // }
+        // depthFormat,
+        // new PipelineDepthStencilStateCreateInfo
+        // {
+        //     SType = VK_STRUCTURE_TYPE_PipelineDepthStencilStateCreateInfo,
+        // }
         );
 
         //
         // Create the descriptor pool for ImGui
         //
-        var poolSize = new DescriptorPoolSize
+        var poolSize = new VkDescriptorPoolSize
         {
-            Type = DescriptorType.CombinedImageSampler,
-            DescriptorCount = maxSets,
+            type = VkDescriptorType.CombinedImageSampler,
+            descriptorCount = maxSets,
         };
-        var descriptorPoolInfo = new DescriptorPoolCreateInfo
+        var descriptorPoolInfo = new VkDescriptorPoolCreateInfo
         {
-            SType = StructureType.DescriptorPoolCreateInfo,
-            PoolSizeCount = 1,
-            PPoolSizes = &poolSize,
-            MaxSets = maxSets,
+            sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+            poolSizeCount = 1,
+            pPoolSizes = &poolSize,
+            maxSets = maxSets,
         };
         if (
-            _vk.CreateDescriptorPool(_device, in descriptorPoolInfo, default, out _descriptorPool)
-            != Result.Success
+            _vd.vkCreateDescriptorPool(in descriptorPoolInfo, default, out _descriptorPool)
+            != VK_SUCCESS
         )
         {
             throw new Exception($"Unable to create descriptor pool");
         }
 
         AllocateDescriptorSets(
-            _vk,
-            _device,
+            _vd,
             _descriptorPool,
             _pipeline.DescriptorSetLayout,
             maxSets,
@@ -154,31 +155,27 @@ public class ImGuiImplVulkan : IDisposable
     }
 
     public static unsafe void AllocateDescriptorSets(
-        Vk vk,
-        Device device,
-        DescriptorPool pool,
-        DescriptorSetLayout layout,
+        VkDeviceApi vd,
+        VkDescriptorPool pool,
+        VkDescriptorSetLayout layout,
         uint maxSets,
-        out DescriptorSet[] descriptorSets
+        out VkDescriptorSet[] descriptorSets
     )
     {
-        descriptorSets = new DescriptorSet[maxSets];
+        descriptorSets = new VkDescriptorSet[maxSets];
 
-        var layouts = stackalloc DescriptorSetLayout[(int)maxSets];
-        new Span<DescriptorSetLayout>(layouts, (int)maxSets).Fill(layout);
-        var allocateInfo = new DescriptorSetAllocateInfo
+        var layouts = stackalloc VkDescriptorSetLayout[(int)maxSets];
+        new Span<VkDescriptorSetLayout>(layouts, (int)maxSets).Fill(layout);
+        var allocateInfo = new VkDescriptorSetAllocateInfo
         {
-            SType = StructureType.DescriptorSetAllocateInfo,
-            DescriptorPool = pool,
-            DescriptorSetCount = maxSets,
-            PSetLayouts = layouts,
+            sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+            descriptorPool = pool,
+            descriptorSetCount = maxSets,
+            pSetLayouts = layouts,
         };
-        fixed (DescriptorSet* descriptorSetsPtr = descriptorSets)
+        fixed (VkDescriptorSet* descriptorSetsPtr = descriptorSets)
         {
-            if (
-                vk.AllocateDescriptorSets(device, in allocateInfo, descriptorSetsPtr)
-                != Result.Success
-            )
+            if (vd.vkAllocateDescriptorSets(in allocateInfo, descriptorSetsPtr) != VK_SUCCESS)
             {
                 throw new Exception("failed to allocate descriptor sets!");
             }
@@ -192,30 +189,30 @@ public class ImGuiImplVulkan : IDisposable
             mesh.Dispose();
         }
         _pipeline.Dispose();
-        _vk.DestroyDescriptorPool(_device, _descriptorPool, default);
+        _vd.vkDestroyDescriptorPool(_descriptorPool, default);
     }
 
-    public unsafe DescriptorSet BindTexture(TextureObject texture)
+    public unsafe VkDescriptorSet BindTexture(TextureObject texture)
     {
-        var descImageInfo = new DescriptorImageInfo
+        var descImageInfo = new VkDescriptorImageInfo
         {
-            Sampler = texture.Sampler,
-            ImageView = texture.ImageView,
-            ImageLayout = ImageLayout.ShaderReadOnlyOptimal,
+            sampler = texture.Sampler,
+            imageView = texture.ImageView,
+            imageLayout = VkImageLayout.ShaderReadOnlyOptimal,
         };
 
         var desc = _descriptorSetPool[0];
         _descriptorSetPool.RemoveAt(0);
 
-        var writeDescriptors = new WriteDescriptorSet
+        var writeDescriptors = new VkWriteDescriptorSet
         {
-            SType = StructureType.WriteDescriptorSet,
-            DstSet = desc,
-            DescriptorCount = 1,
-            DescriptorType = DescriptorType.CombinedImageSampler,
-            PImageInfo = &descImageInfo,
+            sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            dstSet = desc,
+            descriptorCount = 1,
+            descriptorType = VkDescriptorType.CombinedImageSampler,
+            pImageInfo = &descImageInfo,
         };
-        _vk.UpdateDescriptorSets(_device, 1, in writeDescriptors, 0, default);
+        _vd.vkUpdateDescriptorSets(1, &writeDescriptors, 0, default);
 
         return desc;
     }
@@ -225,7 +222,7 @@ public class ImGuiImplVulkan : IDisposable
     //     _descriptorSetPool.Add(texture);
     // }
 
-    public void SetFontTexture(DescriptorSet fontTexture)
+    public void SetFontTexture(VkDescriptorSet fontTexture)
     {
         //     SetFontID(fontTexture.Handle);
         // }
@@ -236,11 +233,11 @@ public class ImGuiImplVulkan : IDisposable
     }
 
     public unsafe void RenderImDrawData(
-        PhysicalDevice physicalDevice,
+        VkPhysicalDevice physicalDevice,
         in ImDrawDataPtr drawDataPtr,
-        in CommandBuffer commandBuffer,
+        in VkCommandBuffer commandBuffer,
         uint imageIndex,
-        in Extent2D swapChainExtent
+        in VkExtent2D swapChainExtent
     )
     {
         int framebufferWidth = (int)(drawDataPtr.DisplaySize.X * drawDataPtr.FramebufferScale.X);
@@ -264,7 +261,7 @@ public class ImGuiImplVulkan : IDisposable
         _vertBufferIndex = (_vertBufferIndex + 1) % _vertBuffers.Length;
         var vertBuffer = _vertBuffers[_vertBufferIndex];
         // update VertexBuffer
-        vertBuffer.UploadDrawData(_vk, physicalDevice, _device, drawDataPtr);
+        vertBuffer.UploadDrawData(physicalDevice, _device, drawDataPtr);
 
         // Bind Vertex And Index Buffer:
         if (drawData.TotalVtxCount > 0)
@@ -274,14 +271,16 @@ public class ImGuiImplVulkan : IDisposable
         }
 
         // Setup viewport:
-        Viewport viewport;
-        viewport.X = 0;
-        viewport.Y = 0;
-        viewport.Width = (float)fb_width;
-        viewport.Height = (float)fb_height;
-        viewport.MinDepth = 0.0f;
-        viewport.MaxDepth = 1.0f;
-        _vk.CmdSetViewport(commandBuffer, 0, 1, &viewport);
+        var viewport = new VkViewport
+        {
+            x = 0,
+            y = 0,
+            width = (float)fb_width,
+            height = (float)fb_height,
+            minDepth = 0.0f,
+            maxDepth = 1.0f,
+        };
+        _vd.vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
 
         // Setup scale and translation:
         // Our visible imgui space lies from draw_data.DisplayPps (top left) to draw_data.DisplayPos+data_data.DisplaySize (bottom right). DisplayPos is (0,0) for single viewport apps.
@@ -330,12 +329,12 @@ public class ImGuiImplVulkan : IDisposable
                         clipRect.Y = 0.0f;
 
                     // Apply scissor/clipping rectangle
-                    Rect2D scissor = new Rect2D();
-                    scissor.Offset.X = (int)clipRect.X;
-                    scissor.Offset.Y = (int)clipRect.Y;
-                    scissor.Extent.Width = (uint)(clipRect.Z - clipRect.X);
-                    scissor.Extent.Height = (uint)(clipRect.W - clipRect.Y);
-                    _vk.CmdSetScissor(commandBuffer, 0, 1, &scissor);
+                    VkRect2D scissor = new();
+                    scissor.offset.x = (int)clipRect.X;
+                    scissor.offset.y = (int)clipRect.Y;
+                    scissor.extent.width = (uint)(clipRect.Z - clipRect.X);
+                    scissor.extent.height = (uint)(clipRect.W - clipRect.Y);
+                    _vd.vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
                     // TODO
                     // https://github.com/ocornut/imgui/blob/master/backends/imgui_impl_vulkan.cpp#L553
@@ -343,13 +342,13 @@ public class ImGuiImplVulkan : IDisposable
                     var image_view = pcmd.GetTexID();
                     if (image_view != last_image_view)
                     {
-                        var descriptorSet = new DescriptorSet { Handle = (ulong)image_view };
+                        var descriptorSet = new VkDescriptorSet((ulong)image_view);
                         _pipeline.Bind(commandBuffer, swapChainExtent, descriptorSet);
                     }
                     last_image_view = image_view;
 
                     // Draw
-                    _vk.CmdDrawIndexed(
+                    _vd.vkCmdDrawIndexed(
                         commandBuffer,
                         pcmd.ElemCount,
                         1,

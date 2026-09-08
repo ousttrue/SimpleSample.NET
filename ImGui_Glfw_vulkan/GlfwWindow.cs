@@ -2,7 +2,8 @@
 
 using Silk.NET.Core.Native;
 using Silk.NET.GLFW;
-using Silk.NET.Vulkan;
+using Vortice.Vulkan;
+using static Vortice.Vulkan.Vulkan;
 
 unsafe class GlfwWindow : IDisposable
 {
@@ -76,9 +77,9 @@ unsafe class GlfwWindow : IDisposable
         return allocator;
     }
 
-    public Result CreateSurface(Instance instance, out SurfaceKHR surface)
+    public VkResult CreateSurface(VkInstance instance, out VkSurfaceKHR surface)
     {
-        SurfaceKHR _surface = default;
+        VkSurfaceKHR _surface = default;
         var err = glfw.CreateWindowSurface(
             new VkHandle(instance.Handle),
             _window,
@@ -86,7 +87,7 @@ unsafe class GlfwWindow : IDisposable
             (VkNonDispatchableHandle*)&_surface
         );
         surface = _surface;
-        return (Result)err;
+        return (VkResult)err;
     }
 
     public (int, int) GetFramebufferSize()

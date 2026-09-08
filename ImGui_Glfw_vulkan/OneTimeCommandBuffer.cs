@@ -1,33 +1,31 @@
-using Silk.NET.Vulkan;
+using Vortice.Vulkan;
+using static Vortice.Vulkan.Vulkan;
 
 public class OneTimeCommandBuffer : IDisposable
 {
-    private readonly Vk _vk;
-    private readonly Device _device;
-    private readonly Queue _graphicsQueue;
-    private readonly CommandPool _pool;
+    private readonly VkDeviceApi _vd;
+    private readonly VkQueue _graphicsQueue;
+    private readonly VkCommandPool _pool;
 
-    public OneTimeCommandBuffer(Vk vk, Device device, uint graphicsQueueFamilyIndex)
+    public OneTimeCommandBuffer(VkDeviceApi vd, uint graphicsQueueFamilyIndex)
     {
-        _vk = vk;
-        _device = device;
-        _graphicsQueue = _vk.GetDeviceQueue(_device, graphicsQueueFamilyIndex, 0);
-        _pool = CreateCommandPool(vk, device, graphicsQueueFamilyIndex);
+        _vd = vd;
+        _vd.vkGetDeviceQueue(graphicsQueueFamilyIndex, 0, out _graphicsQueue);
+        _pool = CreateCommandPool(_vd, graphicsQueueFamilyIndex);
     }
 
-    public static unsafe CommandPool CreateCommandPool(
-        Vk vk,
-        Device device,
+    public static unsafe VkCommandPool CreateCommandPool(
+        VkDeviceApi vd,
         uint graphicsQueueFamilyIndex
     )
     {
-        CommandPoolCreateInfo poolInfo = new()
+        VkCommandPoolCreateInfo poolInfo = new()
         {
-            SType = StructureType.CommandPoolCreateInfo,
-            QueueFamilyIndex = graphicsQueueFamilyIndex,
-            Flags = CommandPoolCreateFlags.ResetCommandBufferBit,
+            sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+            queueFamilyIndex = graphicsQueueFamilyIndex,
+            flags = VkCommandPoolCreateFlags.ResetCommandBuffer,
         };
-        if (vk.CreateCommandPool(device, in poolInfo, null, out var commandPool) != Result.Success)
+        if (vd.vkCreateCommandPool(in poolInfo, null, out var commandPool) != VK_SUCCESS)
         {
             throw new Exception("failed to create command pool!");
         }
@@ -36,50 +34,51 @@ public class OneTimeCommandBuffer : IDisposable
 
     public unsafe void Dispose()
     {
-        _vk.DestroyCommandPool(_device, _pool, null);
+        _vd.vkDestroyCommandPool(_pool, null);
     }
 
-    private CommandBuffer Begin()
+    private unsafe VkCommandBuffer Begin()
     {
-        CommandBufferAllocateInfo allocateInfo = new()
+        VkCommandBufferAllocateInfo allocateInfo = new()
         {
-            SType = StructureType.CommandBufferAllocateInfo,
-            Level = CommandBufferLevel.Primary,
-            CommandPool = _pool,
-            CommandBufferCount = 1,
+            sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            level = VkCommandBufferLevel.Primary,
+            commandPool = _pool,
+            commandBufferCount = 1,
         };
 
-        _vk.AllocateCommandBuffers(_device, in allocateInfo, out CommandBuffer commandBuffer);
+        VkCommandBuffer commandBuffer;
+        _vd.vkAllocateCommandBuffers(&allocateInfo, &commandBuffer);
 
-        CommandBufferBeginInfo beginInfo = new()
+        VkCommandBufferBeginInfo beginInfo = new()
         {
-            SType = StructureType.CommandBufferBeginInfo,
-            Flags = CommandBufferUsageFlags.OneTimeSubmitBit,
+            sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+            flags = VkCommandBufferUsageFlags.OneTimeSubmit,
         };
 
-        _vk.BeginCommandBuffer(commandBuffer, in beginInfo);
+        _vd.vkBeginCommandBuffer(commandBuffer, &beginInfo);
 
         return commandBuffer;
     }
 
-    private unsafe void End(CommandBuffer commandBuffer)
+    private unsafe void End(VkCommandBuffer commandBuffer)
     {
-        _vk.EndCommandBuffer(commandBuffer);
+        _vd.vkEndCommandBuffer(commandBuffer);
 
-        SubmitInfo submitInfo = new()
+        VkSubmitInfo submitInfo = new()
         {
-            SType = StructureType.SubmitInfo,
-            CommandBufferCount = 1,
-            PCommandBuffers = &commandBuffer,
+            sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+            commandBufferCount = 1,
+            pCommandBuffers = &commandBuffer,
         };
 
-        _vk.QueueSubmit(_graphicsQueue, 1, in submitInfo, default);
-        _vk.QueueWaitIdle(_graphicsQueue);
+        _vd.vkQueueSubmit(_graphicsQueue, 1, &submitInfo, default);
+        _vd.vkQueueWaitIdle(_graphicsQueue);
 
-        _vk.FreeCommandBuffers(_device, _pool, 1, in commandBuffer);
+        _vd.vkFreeCommandBuffers(_pool, 1, &commandBuffer);
     }
 
-    public void Execute(Action<CommandBuffer> callback)
+    public void Execute(Action<VkCommandBuffer> callback)
     {
         var commandBuffer = Begin();
         callback(commandBuffer);

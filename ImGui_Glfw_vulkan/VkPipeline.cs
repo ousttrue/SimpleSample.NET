@@ -1,62 +1,64 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Silk.NET.Core.Native;
-using Silk.NET.Vulkan;
+using Silk.NET.OpenGL;
+using Vortice.Vulkan;
+using static Vortice.Vulkan.Vulkan;
 
 public class VkPipeline<CONSTANT> : IDisposable
     where CONSTANT : unmanaged
 {
-    Vk _vk;
-    Device _device;
+    VkDeviceApi _vd;
+    VkDevice _device;
 
-    public readonly DescriptorSetLayout DescriptorSetLayout;
+    public readonly VkDescriptorSetLayout DescriptorSetLayout;
     public readonly DescriptorPoolObject[] DescriptorPools;
 
-    public readonly PipelineLayout PipelieLayout;
-    private readonly Pipeline _graphicsPipeline;
+    public readonly VkPipelineLayout PipelieLayout;
+    private readonly VkPipeline _graphicsPipeline;
 
     public record struct RenderPassArgs(
-        Extent2D extent,
-        ImageView[] imageViews,
-        ImageView depthImageView
+        VkExtent2D extent,
+        VkImageView[] imageViews,
+        VkImageView depthImageView
     ) { }
 
     public record struct DepthStencilInfo(
-        Format depthFormat,
-        PipelineDepthStencilStateCreateInfo depthStencil
+        VkFormat depthFormat,
+        VkPipelineDepthStencilStateCreateInfo depthStencil
     ) { }
 
     public unsafe VkPipeline(
-        Vk vk,
-        Device device,
+        VkDeviceApi vd,
+        VkDevice device,
         VkShaderModule vs,
         VkShaderModule fs,
-        PrimitiveTopology topology,
-        VertexInputBindingDescription vertexInputBindingDescription,
-        VertexInputAttributeDescription[] vertexInputAttributeDescriptions,
+        VkPrimitiveTopology topology,
+        VkVertexInputBindingDescription vertexInputBindingDescription,
+        VkVertexInputAttributeDescription[] vertexInputAttributeDescriptions,
         uint maxFlightCount,
-        ReadOnlySpan<DescriptorSetLayoutBinding> descriptorSetLayoutBindings,
-        Format colorFormat,
+        ReadOnlySpan<VkDescriptorSetLayoutBinding> descriptorSetLayoutBindings,
+        VkFormat colorFormat,
         DepthStencilInfo? depthStencil
     )
     {
-        _vk = vk;
+        _vd = vd;
         _device = device;
 
         //
         // descriptorSetLayout
         //
-        fixed (DescriptorSetLayoutBinding* bindingsPtr = descriptorSetLayoutBindings)
+        fixed (VkDescriptorSetLayoutBinding* bindingsPtr = descriptorSetLayoutBindings)
         {
-            DescriptorSetLayoutCreateInfo layoutInfo = new()
+            VkDescriptorSetLayoutCreateInfo layoutInfo = new()
             {
-                SType = StructureType.DescriptorSetLayoutCreateInfo,
-                BindingCount = (uint)descriptorSetLayoutBindings.Length,
-                PBindings = bindingsPtr,
+                sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+                bindingCount = (uint)descriptorSetLayoutBindings.Length,
+                pBindings = bindingsPtr,
             };
             if (
-                vk.CreateDescriptorSetLayout(device, in layoutInfo, null, out DescriptorSetLayout)
-                != Result.Success
+                _vd.vkCreateDescriptorSetLayout(in layoutInfo, null, out DescriptorSetLayout)
+                != VK_SUCCESS
             )
             {
                 throw new Exception("failed to create descriptor set layout!");
@@ -70,100 +72,98 @@ public class VkPipeline<CONSTANT> : IDisposable
         for (int i = 0; i < DescriptorPools.Length; ++i)
         {
             DescriptorPools[i] = new DescriptorPoolObject(
-                _vk,
-                _device,
+                _vd,
                 DescriptorSetLayout,
                 descriptorSetLayoutBindings,
                 255
             );
         }
 
-        var constantRange = new PushConstantRange
+        var constantRange = new VkPushConstantRange
         {
-            Offset = 0,
-            Size = (uint)Marshal.SizeOf<CONSTANT>(),
-            StageFlags = ShaderStageFlags.VertexBit,
+            offset = 0,
+            size = (uint)Marshal.SizeOf<CONSTANT>(),
+            stageFlags = VkShaderStageFlags.Vertex,
         };
 
         //
         // pipeline
         //
         var descriptorSetLayout = DescriptorSetLayout;
-        PipelineLayoutCreateInfo pipelineLayoutInfo = new()
+        VkPipelineLayoutCreateInfo pipelineLayoutInfo = new()
         {
-            SType = StructureType.PipelineLayoutCreateInfo,
-            SetLayoutCount = 1,
-            PSetLayouts = &descriptorSetLayout,
-            PushConstantRangeCount = 1,
-            PPushConstantRanges = &constantRange,
+            sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+            setLayoutCount = 1,
+            pSetLayouts = &descriptorSetLayout,
+            pushConstantRangeCount = 1,
+            pPushConstantRanges = &constantRange,
         };
         if (
-            vk.CreatePipelineLayout(device, in pipelineLayoutInfo, null, out PipelieLayout)
-            != Result.Success
+            _vd.vkCreatePipelineLayout(in pipelineLayoutInfo, null, out PipelieLayout) != VK_SUCCESS
         )
         {
             throw new Exception("failed to create pipeline layout!");
         }
 
         //
-        PipelineShaderStageCreateInfo vertShaderStageInfo = new()
+        VkPipelineShaderStageCreateInfo vertShaderStageInfo = new()
         {
-            SType = StructureType.PipelineShaderStageCreateInfo,
-            Stage = ShaderStageFlags.VertexBit,
-            Module = vs.Module,
-            PName = (byte*)SilkMarshal.StringToPtr("main"),
+            sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            stage = VkShaderStageFlags.Vertex,
+            module = vs,
+            pName = (byte*)SilkMarshal.StringToPtr("main"),
         };
-        PipelineShaderStageCreateInfo fragShaderStageInfo = new()
+        VkPipelineShaderStageCreateInfo fragShaderStageInfo = new()
         {
-            SType = StructureType.PipelineShaderStageCreateInfo,
-            Stage = ShaderStageFlags.FragmentBit,
-            Module = fs.Module,
-            PName = (byte*)SilkMarshal.StringToPtr("main"),
+            sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            stage = VkShaderStageFlags.Fragment,
+            module = fs,
+            pName = (byte*)SilkMarshal.StringToPtr("main"),
         };
         var shaderStages = stackalloc[] { vertShaderStageInfo, fragShaderStageInfo };
 
         fixed (
-            VertexInputAttributeDescription* attributeDescriptionsPtr =
+            VkVertexInputAttributeDescription* attributeDescriptionsPtr =
                 vertexInputAttributeDescriptions
         )
         {
-            PipelineVertexInputStateCreateInfo vertexInputInfo = new()
+            VkPipelineVertexInputStateCreateInfo vertexInputInfo = new()
             {
-                SType = StructureType.PipelineVertexInputStateCreateInfo,
-                VertexBindingDescriptionCount = 1,
-                PVertexBindingDescriptions = &vertexInputBindingDescription,
-                VertexAttributeDescriptionCount = (uint)vertexInputAttributeDescriptions.Length,
-                PVertexAttributeDescriptions = attributeDescriptionsPtr,
+                sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+                vertexBindingDescriptionCount = 1,
+                pVertexBindingDescriptions = &vertexInputBindingDescription,
+                vertexAttributeDescriptionCount = (uint)vertexInputAttributeDescriptions.Length,
+                pVertexAttributeDescriptions = attributeDescriptionsPtr,
             };
 
-            PipelineInputAssemblyStateCreateInfo inputAssembly = new()
+            VkPipelineInputAssemblyStateCreateInfo inputAssembly = new()
             {
-                SType = StructureType.PipelineInputAssemblyStateCreateInfo,
-                Topology = topology,
+                sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+                topology = topology,
             };
 
-            PipelineViewportStateCreateInfo viewportState = new()
+            VkPipelineViewportStateCreateInfo viewportState = new()
             {
-                SType = StructureType.PipelineViewportStateCreateInfo,
-                ViewportCount = 1,
-                PViewports = default,
-                ScissorCount = 1,
-                PScissors = default,
+                sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+                viewportCount = 1,
+                pViewports = default,
+                scissorCount = 1,
+                pScissors = default,
             };
 
-            PipelineRasterizationStateCreateInfo rasterizer = new()
+            VkPipelineRasterizationStateCreateInfo rasterizer = new()
             {
-                SType = StructureType.PipelineRasterizationStateCreateInfo,
-                PolygonMode = PolygonMode.Fill,
-                CullMode = CullModeFlags.None,
-                FrontFace = FrontFace.CounterClockwise,
-                LineWidth = 1,
+                sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+                polygonMode = VkPolygonMode.Fill,
+                cullMode = VkCullModeFlags.None,
+                frontFace = VkFrontFace.CounterClockwise,
+                lineWidth = 1,
             };
 
-            PipelineMultisampleStateCreateInfo multisampling = new()
+            VkPipelineMultisampleStateCreateInfo multisampling = new()
             {
-                SType = StructureType.PipelineMultisampleStateCreateInfo,
-                RasterizationSamples = SampleCountFlags.Count1Bit,
+                sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+                rasterizationSamples = VkSampleCountFlags.Count1,
             };
 
             // PipelineColorBlendAttachmentState colorBlendAttachment = new()
@@ -175,32 +175,31 @@ public class VkPipeline<CONSTANT> : IDisposable
             //         | ColorComponentFlags.ABit,
             //     BlendEnable = false,
             // };
-            var colorBlendAttachment = new PipelineColorBlendAttachmentState
+            var colorBlendAttachment = new VkPipelineColorBlendAttachmentState
             {
-                BlendEnable = new Silk.NET.Core.Bool32(true),
-                SrcColorBlendFactor = BlendFactor.SrcAlpha,
-                DstColorBlendFactor = BlendFactor.OneMinusSrcAlpha,
-                ColorBlendOp = BlendOp.Add,
-                SrcAlphaBlendFactor = BlendFactor.One,
-                DstAlphaBlendFactor = BlendFactor.OneMinusSrcAlpha,
-                AlphaBlendOp = BlendOp.Add,
-                ColorWriteMask =
-                    ColorComponentFlags.RBit
-                    | ColorComponentFlags.GBit
-                    | ColorComponentFlags.BBit
-                    | ColorComponentFlags.ABit,
+                blendEnable = true,
+                srcColorBlendFactor = VkBlendFactor.SrcAlpha,
+                dstColorBlendFactor = VkBlendFactor.OneMinusSrcAlpha,
+                colorBlendOp = VkBlendOp.Add,
+                srcAlphaBlendFactor = VkBlendFactor.One,
+                dstAlphaBlendFactor = VkBlendFactor.OneMinusSrcAlpha,
+                alphaBlendOp = VkBlendOp.Add,
+                colorWriteMask =
+                    VkColorComponentFlags.R
+                    | VkColorComponentFlags.G
+                    | VkColorComponentFlags.B
+                    | VkColorComponentFlags.A,
             };
 
-            var colorBlending = new PipelineColorBlendStateCreateInfo
+            var colorBlending = new VkPipelineColorBlendStateCreateInfo
             {
-                SType = StructureType.PipelineColorBlendStateCreateInfo,
-                AttachmentCount = 1,
-                PAttachments = (PipelineColorBlendAttachmentState*)
-                    Unsafe.AsPointer(ref colorBlendAttachment),
+                sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+                attachmentCount = 1,
+                pAttachments = &colorBlendAttachment,
             };
             // PipelineColorBlendStateCreateInfo colorBlending = new()
             // {
-            //     SType = StructureType.PipelineColorBlendStateCreateInfo,
+            //     SType = VK_STRUCTURE_TYPE_PipelineColorBlendStateCreateInfo,
             //     LogicOpEnable = false,
             //     LogicOp = LogicOp.Copy,
             //     AttachmentCount = 1,
@@ -211,66 +210,62 @@ public class VkPipeline<CONSTANT> : IDisposable
             // colorBlending.BlendConstants[2] = 0;
             // colorBlending.BlendConstants[3] = 0;
 
-            var dynamicStates = stackalloc[] { DynamicState.Viewport, DynamicState.Scissor };
-            PipelineDynamicStateCreateInfo dynamicState = new()
+            var dynamicStates = stackalloc[] { VkDynamicState.Viewport, VkDynamicState.Scissor };
+            VkPipelineDynamicStateCreateInfo dynamicState = new()
             {
-                SType = StructureType.PipelineDynamicStateCreateInfo,
-                DynamicStateCount = 2,
-                PDynamicStates = dynamicStates,
+                sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+                dynamicStateCount = 2,
+                pDynamicStates = dynamicStates,
             };
 
-            GraphicsPipelineCreateInfo pipelineInfo = new()
+            VkGraphicsPipelineCreateInfo pipelineInfo = new()
             {
-                SType = StructureType.GraphicsPipelineCreateInfo,
-                StageCount = 2,
-                PStages = shaderStages,
-                PVertexInputState = &vertexInputInfo,
-                PInputAssemblyState = &inputAssembly,
-                PViewportState = &viewportState,
-                PRasterizationState = &rasterizer,
-                PMultisampleState = &multisampling,
-                PColorBlendState = &colorBlending,
-                PDynamicState = &dynamicState,
-                Layout = PipelieLayout,
-                Subpass = 0,
-                BasePipelineHandle = default,
+                sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+                stageCount = 2,
+                pStages = shaderStages,
+                pVertexInputState = &vertexInputInfo,
+                pInputAssemblyState = &inputAssembly,
+                pViewportState = &viewportState,
+                pRasterizationState = &rasterizer,
+                pMultisampleState = &multisampling,
+                pColorBlendState = &colorBlending,
+                pDynamicState = &dynamicState,
+                layout = PipelieLayout,
+                subpass = 0,
+                basePipelineHandle = default,
             };
-            var pipelineRenderingCreate = new PipelineRenderingCreateInfo
+            var pipelineRenderingCreate = new VkPipelineRenderingCreateInfo
             {
-                SType = StructureType.PipelineRenderingCreateInfo,
-                ColorAttachmentCount = 1,
-                PColorAttachmentFormats = &colorFormat,
+                sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+                colorAttachmentCount = 1,
+                pColorAttachmentFormats = &colorFormat,
             };
             if (
                 depthStencil is
-                (Format depthFormat, PipelineDepthStencilStateCreateInfo depthStencilInfo)
+                (VkFormat depthFormat, VkPipelineDepthStencilStateCreateInfo depthStencilInfo)
             )
             {
-                pipelineInfo.PDepthStencilState = &depthStencilInfo;
-                pipelineRenderingCreate.DepthAttachmentFormat = depthFormat;
-                pipelineRenderingCreate.StencilAttachmentFormat = depthFormat;
+                pipelineInfo.pDepthStencilState = &depthStencilInfo;
+                pipelineRenderingCreate.depthAttachmentFormat = depthFormat;
+                pipelineRenderingCreate.stencilAttachmentFormat = depthFormat;
             }
             {
                 // vulkan-1.3 dynamic rendering(without RenderPass and FrameBuffer)
-                pipelineInfo.PNext = &pipelineRenderingCreate;
+                pipelineInfo.pNext = &pipelineRenderingCreate;
             }
+            VkPipeline graphicsPipeline;
             if (
-                vk.CreateGraphicsPipelines(
-                    device,
-                    default,
-                    1,
-                    in pipelineInfo,
-                    null,
-                    out _graphicsPipeline
-                ) != Result.Success
+                vd.vkCreateGraphicsPipelines(default, 1, &pipelineInfo, null, &graphicsPipeline)
+                != VK_SUCCESS
             )
             {
                 throw new Exception("failed to create graphics pipeline!");
             }
+            _graphicsPipeline = graphicsPipeline;
         }
 
-        SilkMarshal.Free((nint)vertShaderStageInfo.PName);
-        SilkMarshal.Free((nint)fragShaderStageInfo.PName);
+        SilkMarshal.Free((nint)vertShaderStageInfo.pName);
+        SilkMarshal.Free((nint)fragShaderStageInfo.pName);
     }
 
     public unsafe void Dispose()
@@ -279,15 +274,15 @@ public class VkPipeline<CONSTANT> : IDisposable
         {
             pool.Dispose();
         }
-        _vk.DestroyPipeline(_device, _graphicsPipeline, null);
-        _vk.DestroyPipelineLayout(_device, PipelieLayout, null);
-        _vk.DestroyDescriptorSetLayout(_device, DescriptorSetLayout, null);
+        _vd.vkDestroyPipeline(_graphicsPipeline, null);
+        _vd.vkDestroyPipelineLayout(PipelieLayout, null);
+        _vd.vkDestroyDescriptorSetLayout(DescriptorSetLayout, null);
     }
 
-    public DescriptorSet Bind(
+    public VkDescriptorSet Bind(
         uint frameCount,
-        CommandBuffer commandBuffer,
-        Extent2D extent,
+        VkCommandBuffer commandBuffer,
+        VkExtent2D extent,
         uint imageIndex
     )
     {
@@ -297,45 +292,45 @@ public class VkPipeline<CONSTANT> : IDisposable
     }
 
     public unsafe void Bind(
-        CommandBuffer commandBuffer,
-        Extent2D extent,
-        DescriptorSet descriptorSet
+        VkCommandBuffer commandBuffer,
+        VkExtent2D extent,
+        VkDescriptorSet descriptorSet
     )
     {
-        Viewport viewport = new()
+        VkViewport viewport = new()
         {
-            X = 0,
-            Y = 0,
-            Width = extent.Width,
-            Height = extent.Height,
-            MinDepth = 0,
-            MaxDepth = 1,
+            x = 0,
+            y = 0,
+            width = extent.width,
+            height = extent.height,
+            minDepth = 0,
+            maxDepth = 1,
         };
-        _vk.CmdSetViewport(commandBuffer, 0, 1, &viewport);
+        _vd.vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
 
-        Rect2D scissor = new() { Offset = { X = 0, Y = 0 }, Extent = extent };
-        _vk.CmdSetScissor(commandBuffer, 0, 1, &scissor);
+        VkRect2D scissor = new() { offset = { x = 0, y = 0 }, extent = extent };
+        _vd.vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-        _vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Graphics, _graphicsPipeline);
+        _vd.vkCmdBindPipeline(commandBuffer, VkPipelineBindPoint.Graphics, _graphicsPipeline);
 
-        _vk.CmdBindDescriptorSets(
+        _vd.vkCmdBindDescriptorSets(
             commandBuffer,
-            PipelineBindPoint.Graphics,
+            VkPipelineBindPoint.Graphics,
             PipelieLayout,
             0,
             1,
-            in descriptorSet,
+            &descriptorSet,
             0,
             null
         );
     }
 
-    public unsafe void PushConstant(CommandBuffer commandBuffer, CONSTANT value)
+    public unsafe void PushConstant(VkCommandBuffer commandBuffer, CONSTANT value)
     {
-        _vk.CmdPushConstants(
+        _vd.vkCmdPushConstants(
             commandBuffer,
             PipelieLayout,
-            ShaderStageFlags.VertexBit,
+            VkShaderStageFlags.Vertex,
             0,
             (uint)Marshal.SizeOf<CONSTANT>(),
             &value

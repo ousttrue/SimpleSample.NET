@@ -1,36 +1,37 @@
 // https://github.com/ocornut/imgui/blob/master/examples/example_glfw_vulkan/main.cpp
 
 using ImGuiNET;
-using Silk.NET.Vulkan;
-using Silk.NET.Vulkan.Extensions.KHR;
-using Semaphore = Silk.NET.Vulkan.Semaphore;
+using Vortice.Vulkan;
+using static Vortice.Vulkan.Vulkan;
 
 class ImGui_ImplVulkanH_Window : IDisposable
 {
-    private readonly Vk vk;
-    private readonly Instance Instance;
-    private readonly PhysicalDevice PhysicalDevice;
+    private readonly VkInstanceApi _vi;
+    private readonly VkDeviceApi _vd;
+    private readonly VkInstance Instance;
+    private readonly VkPhysicalDevice PhysicalDevice;
     private readonly uint QueueFamily;
-    private readonly Device Device;
-    private readonly Queue Queue;
-    private readonly KhrSurface khrSurface;
-    private readonly KhrSwapchain khrSwapchain;
+    private readonly VkDevice Device;
+    private readonly VkQueue Queue;
+
+    // private readonly KhrSurface khrSurface;
+    // private readonly KhrSwapchain khrSwapchain;
 
     // Input
     bool UseDynamicRendering = true;
-    SurfaceKHR Surface; // Surface created and destroyed by caller.
-    public SurfaceFormatKHR SurfaceFormat;
-    PresentModeKHR PresentMode; // Ensure we get an error if user doesn't set this.
-    AttachmentDescription AttachmentDesc = new AttachmentDescription
+    VkSurfaceKHR Surface; // Surface created and destroyed by caller.
+    public VkSurfaceFormatKHR SurfaceFormat;
+    VkPresentModeKHR PresentMode; // Ensure we get an error if user doesn't set this.
+    VkAttachmentDescription AttachmentDesc = new()
     {
-        Format = Format.Undefined, // Will automatically use wd.SurfaceFormat.format.
-        Samples = SampleCountFlags.Count1Bit,
-        LoadOp = AttachmentLoadOp.Clear,
-        StoreOp = AttachmentStoreOp.Store,
-        StencilLoadOp = AttachmentLoadOp.DontCare,
-        StencilStoreOp = AttachmentStoreOp.DontCare,
-        InitialLayout = ImageLayout.Undefined,
-        FinalLayout = ImageLayout.PresentSrcKhr,
+        format = VkFormat.Undefined, // Will automatically use wd.SurfaceFormat.format.
+        samples = VkSampleCountFlags.Count1,
+        loadOp = VkAttachmentLoadOp.Clear,
+        storeOp = VkAttachmentStoreOp.Store,
+        stencilLoadOp = VkAttachmentLoadOp.DontCare,
+        stencilStoreOp = VkAttachmentStoreOp.DontCare,
+        initialLayout = VkImageLayout.Undefined,
+        finalLayout = VkImageLayout.PresentSrcKHR,
     }; // RenderPass creation: main attachment description.
 
     // Internal
@@ -38,7 +39,7 @@ class ImGui_ImplVulkanH_Window : IDisposable
 
     public int Width; // Generally same as passed to ImGui_ImplVulkanH_CreateOrResizeWindow()
     public int Height;
-    SwapchainKHR Swapchain;
+    VkSwapchainKHR Swapchain;
 
     // public RenderPass RenderPass;
 
@@ -50,11 +51,11 @@ class ImGui_ImplVulkanH_Window : IDisposable
 
     class ImGui_ImplVulkanH_Frame
     {
-        public CommandPool CommandPool;
-        public CommandBuffer CommandBuffer;
-        public Fence Fence;
-        public Image Backbuffer;
-        public ImageView BackbufferView;
+        public VkCommandPool CommandPool;
+        public VkCommandBuffer CommandBuffer;
+        public VkFence Fence;
+        public VkImage Backbuffer;
+        public VkImageView BackbufferView;
         // public Framebuffer Framebuffer;
     };
 
@@ -62,17 +63,17 @@ class ImGui_ImplVulkanH_Window : IDisposable
 
     class ImGui_ImplVulkanH_FrameSemaphores
     {
-        public Semaphore ImageAcquiredSemaphore;
-        public Semaphore RenderCompleteSemaphore;
+        public VkSemaphore ImageAcquiredSemaphore;
+        public VkSemaphore RenderCompleteSemaphore;
     };
 
     List<ImGui_ImplVulkanH_FrameSemaphores> FrameSemaphores = [];
 
-    private unsafe SurfaceFormatKHR ImGui_ImplVulkanH_SelectSurfaceFormat(
-        PhysicalDevice physical_device,
-        SurfaceKHR surface,
-        ReadOnlySpan<Format> request_formats,
-        ColorSpaceKHR request_color_space
+    private unsafe VkSurfaceFormatKHR ImGui_ImplVulkanH_SelectSurfaceFormat(
+        VkPhysicalDevice physical_device,
+        VkSurfaceKHR surface,
+        ReadOnlySpan<VkFormat> request_formats,
+        VkColorSpaceKHR request_color_space
     )
     {
         // IM_ASSERT(g_FunctionsLoaded && "Need to call ImGui_ImplVulkan_LoadFunctions() if IMGUI_IMPL_VULKAN_NO_PROTOTYPES or VK_NO_PROTOTYPES are set!");
@@ -84,24 +85,19 @@ class ImGui_ImplVulkanH_Window : IDisposable
         // Additionally several new color spaces were introduced with Vulkan Spec v1.0.40,
         // hence we must make sure that a format with the mostly available color space, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR, is found and used.
         uint avail_count;
-        khrSurface.GetPhysicalDeviceSurfaceFormats(physical_device, surface, &avail_count, null);
-        var avail_format = stackalloc SurfaceFormatKHR[(int)avail_count];
-        khrSurface.GetPhysicalDeviceSurfaceFormats(
-            physical_device,
-            surface,
-            &avail_count,
-            avail_format
-        );
+        _vi.vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &avail_count, null);
+        Span<VkSurfaceFormatKHR> avail_format = stackalloc VkSurfaceFormatKHR[(int)avail_count];
+        _vi.vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, avail_format);
 
         // First check if only one format, VK_FORMAT_UNDEFINED, is available, which would imply that any format is available
         if (avail_count == 1)
         {
-            if (avail_format[0].Format == Format.Undefined)
+            if (avail_format[0].format == VkFormat.Undefined)
             {
-                return new SurfaceFormatKHR
+                return new VkSurfaceFormatKHR
                 {
-                    Format = request_formats[0],
-                    ColorSpace = request_color_space,
+                    format = request_formats[0],
+                    colorSpace = request_color_space,
                 };
             }
             else
@@ -114,22 +110,22 @@ class ImGui_ImplVulkanH_Window : IDisposable
         {
             // Request several formats, the first found will be used
             for (int request_i = 0; request_i < request_formats.Length; request_i++)
-            for (uint avail_i = 0; avail_i < avail_count; avail_i++)
-                if (
-                    avail_format[avail_i].Format == request_formats[request_i]
-                    && avail_format[avail_i].ColorSpace == request_color_space
-                )
-                    return avail_format[avail_i];
+                foreach (var avail in avail_format)
+                    if (
+                        avail.format == request_formats[request_i]
+                        && avail.colorSpace == request_color_space
+                    )
+                        return avail;
 
             // If none of the requested image formats could be found, use the first available
             return avail_format[0];
         }
     }
 
-    private unsafe PresentModeKHR ImGui_ImplVulkanH_SelectPresentMode(
-        PhysicalDevice physical_device,
-        SurfaceKHR surface,
-        ReadOnlySpan<PresentModeKHR> request_modes
+    private unsafe VkPresentModeKHR ImGui_ImplVulkanH_SelectPresentMode(
+        VkPhysicalDevice physical_device,
+        VkSurfaceKHR surface,
+        ReadOnlySpan<VkPresentModeKHR> request_modes
     )
     {
         // IM_ASSERT(g_FunctionsLoaded && "Need to call ImGui_ImplVulkan_LoadFunctions() if IMGUI_IMPL_VULKAN_NO_PROTOTYPES or VK_NO_PROTOTYPES are set!");
@@ -138,61 +134,48 @@ class ImGui_ImplVulkanH_Window : IDisposable
 
         // Request a certain mode and confirm that it is available. If not use VK_PRESENT_MODE_FIFO_KHR which is mandatory
         uint avail_count = 0;
-        khrSurface.GetPhysicalDeviceSurfacePresentModes(
-            physical_device,
-            surface,
-            &avail_count,
-            null
-        );
-        var avail_modes = stackalloc PresentModeKHR[(int)avail_count];
-        khrSurface.GetPhysicalDeviceSurfacePresentModes(
-            physical_device,
-            surface,
-            &avail_count,
-            avail_modes
-        );
+        _vi.vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &avail_count, null);
+        Span<VkPresentModeKHR> avail_modes = stackalloc VkPresentModeKHR[(int)avail_count];
+        _vi.vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, avail_modes);
         //for (uint avail_i = 0; avail_i < avail_count; avail_i++)
         //    printf("[vulkan] avail_modes[%d] = %d\n", avail_i, avail_modes[avail_i]);
 
-        for (int request_i = 0; request_i < request_modes.Length; request_i++)
-        for (uint avail_i = 0; avail_i < avail_count; avail_i++)
-            if (request_modes[request_i] == avail_modes[avail_i])
-                return request_modes[request_i];
+        foreach (var request in request_modes)
+        foreach (var avail in avail_modes)
+            if (request == avail)
+                return request;
 
-        return PresentModeKHR.FifoKhr; // Always available
+        return VkPresentModeKHR.Fifo; // Always available
     }
 
-    unsafe void ImGui_ImplVulkanH_DestroyFrame(Device device, ImGui_ImplVulkanH_Frame fd)
+    unsafe void ImGui_ImplVulkanH_DestroyFrame(ImGui_ImplVulkanH_Frame fd)
     {
-        vk.DestroyFence(device, fd.Fence, default);
+        _vd.vkDestroyFence(fd.Fence, default);
         var commandBuffer = fd.CommandBuffer;
-        vk.FreeCommandBuffers(device, fd.CommandPool, 1, &commandBuffer);
-        vk.DestroyCommandPool(device, fd.CommandPool, default);
+        _vd.vkFreeCommandBuffers(fd.CommandPool, 1, &commandBuffer);
+        _vd.vkDestroyCommandPool(fd.CommandPool, default);
         fd.Fence = default;
         fd.CommandBuffer = default;
         fd.CommandPool = default;
 
-        vk.DestroyImageView(device, fd.BackbufferView, default);
+        _vd.vkDestroyImageView(fd.BackbufferView, default);
         // vk.DestroyFramebuffer(device, fd.Framebuffer, default);
     }
 
-    unsafe void ImGui_ImplVulkanH_DestroyFrameSemaphores(
-        Device device,
-        ImGui_ImplVulkanH_FrameSemaphores fsd
-    )
+    unsafe void ImGui_ImplVulkanH_DestroyFrameSemaphores(ImGui_ImplVulkanH_FrameSemaphores fsd)
     {
-        vk.DestroySemaphore(device, fsd.ImageAcquiredSemaphore, default);
-        vk.DestroySemaphore(device, fsd.RenderCompleteSemaphore, default);
+        _vd.vkDestroySemaphore(fsd.ImageAcquiredSemaphore, default);
+        _vd.vkDestroySemaphore(fsd.RenderCompleteSemaphore, default);
         fsd.ImageAcquiredSemaphore = fsd.RenderCompleteSemaphore = default;
     }
 
-    uint ImGui_ImplVulkanH_GetMinImageCountFromPresentMode(PresentModeKHR present_mode)
+    uint ImGui_ImplVulkanH_GetMinImageCountFromPresentMode(VkPresentModeKHR present_mode)
     {
-        if (present_mode == PresentModeKHR.MailboxKhr)
+        if (present_mode == VkPresentModeKHR.Mailbox)
             return 3;
-        if (present_mode == PresentModeKHR.FifoKhr || present_mode == PresentModeKHR.FifoRelaxedKhr)
+        if (present_mode == VkPresentModeKHR.Fifo || present_mode == VkPresentModeKHR.FifoRelaxed)
             return 2;
-        if (present_mode == PresentModeKHR.ImmediateKhr)
+        if (present_mode == VkPresentModeKHR.Immediate)
             return 1;
 
         throw new Exception();
@@ -202,24 +185,24 @@ class ImGui_ImplVulkanH_Window : IDisposable
 
     // Also destroy old swap chain and in-flight frames data, if any.
     unsafe void ImGui_ImplVulkanH_CreateWindowSwapChain(
-        PhysicalDevice physical_device,
-        Device device,
+        VkPhysicalDevice physical_device,
+        VkDevice device,
         int w,
         int h,
         uint min_image_count,
-        ImageUsageFlags image_usage
+        VkImageUsageFlags image_usage
     )
     {
         var old_swapchain = Swapchain;
         Swapchain = default;
-        vk.DeviceWaitIdle(device).ThrowIfError();
+        _vd.vkDeviceWaitIdle().ThrowIfError();
 
         // We don't use ImGui_ImplVulkanH_DestroyWindow() because we want to preserve the old swapchain to create the new one.
         // Destroy old Framebuffer
         for (int i = 0; i < ImageCount; i++)
-            ImGui_ImplVulkanH_DestroyFrame(device, Frames[i]);
+            ImGui_ImplVulkanH_DestroyFrame(Frames[i]);
         for (int i = 0; i < SemaphoreCount; i++)
-            ImGui_ImplVulkanH_DestroyFrameSemaphores(device, FrameSemaphores[i]);
+            ImGui_ImplVulkanH_DestroyFrameSemaphores(FrameSemaphores[i]);
         Frames.Clear();
         FrameSemaphores.Clear();
         ImageCount = 0;
@@ -232,65 +215,56 @@ class ImGui_ImplVulkanH_Window : IDisposable
 
         // Create Swapchain
         {
-            khrSurface
-                .GetPhysicalDeviceSurfaceCapabilities(physical_device, Surface, out var cap)
+            _vi.vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, Surface, out var cap)
                 .ThrowIfError();
 
-            var info = new SwapchainCreateInfoKHR
+            var info = new VkSwapchainCreateInfoKHR
             {
-                SType = StructureType.SwapchainCreateInfoKhr,
-                Surface = Surface,
-                MinImageCount = min_image_count,
-                ImageFormat = SurfaceFormat.Format,
-                ImageColorSpace = SurfaceFormat.ColorSpace,
-                ImageArrayLayers = 1,
-                ImageUsage = ImageUsageFlags.ColorAttachmentBit | image_usage,
-                ImageSharingMode = SharingMode.Exclusive, // Assume that graphics family == present family
-                PreTransform = cap.SupportedTransforms.HasFlag(
-                    SurfaceTransformFlagsKHR.IdentityBitKhr
-                )
-                    ? SurfaceTransformFlagsKHR.IdentityBitKhr
-                    : cap.CurrentTransform,
+                sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+                surface = Surface,
+                minImageCount = min_image_count,
+                imageFormat = SurfaceFormat.format,
+                imageColorSpace = SurfaceFormat.colorSpace,
+                imageArrayLayers = 1,
+                imageUsage = VkImageUsageFlags.ColorAttachment | image_usage,
+                imageSharingMode = VkSharingMode.Exclusive, // Assume that graphics family == present family
+                preTransform = cap.supportedTransforms.HasFlag(VkSurfaceTransformFlagsKHR.Identity)
+                    ? VkSurfaceTransformFlagsKHR.Identity
+                    : cap.currentTransform,
             };
-            if (
-                cap.SupportedCompositeAlpha.HasFlag(
-                    CompositeAlphaFlagsKHR.CompositeAlphaOpaqueBitKhr
-                )
-            )
-                info.CompositeAlpha = CompositeAlphaFlagsKHR.OpaqueBitKhr;
-            else if (cap.SupportedCompositeAlpha.HasFlag(CompositeAlphaFlagsKHR.InheritBitKhr))
-                info.CompositeAlpha = CompositeAlphaFlagsKHR.InheritBitKhr;
+            if (cap.supportedCompositeAlpha.HasFlag(VkCompositeAlphaFlagsKHR.Opaque))
+                info.compositeAlpha = VkCompositeAlphaFlagsKHR.Opaque;
+            else if (cap.supportedCompositeAlpha.HasFlag(VkCompositeAlphaFlagsKHR.Inherit))
+                info.compositeAlpha = VkCompositeAlphaFlagsKHR.Inherit;
             else
                 throw new Exception("No supported composite alpha mode found!");
-            info.PresentMode = PresentMode;
-            info.Clipped = Vk.True;
-            info.OldSwapchain = old_swapchain;
-            if (info.MinImageCount < cap.MinImageCount)
-                info.MinImageCount = cap.MinImageCount;
-            else if (cap.MaxImageCount != 0 && info.MinImageCount > cap.MaxImageCount)
-                info.MinImageCount = cap.MaxImageCount;
-            if (cap.CurrentExtent.Width == 0xffffffff)
+            info.presentMode = PresentMode;
+            info.clipped = true;
+            info.oldSwapchain = old_swapchain;
+            if (info.minImageCount < cap.minImageCount)
+                info.minImageCount = cap.minImageCount;
+            else if (cap.maxImageCount != 0 && info.minImageCount > cap.maxImageCount)
+                info.minImageCount = cap.maxImageCount;
+            if (cap.currentExtent.width == 0xffffffff)
             {
                 Width = w;
                 Height = h;
             }
             else
             {
-                Width = (int)cap.CurrentExtent.Width;
-                Height = (int)cap.CurrentExtent.Height;
+                Width = (int)cap.currentExtent.width;
+                Height = (int)cap.currentExtent.height;
             }
-            info.ImageExtent.Width = (uint)Width;
-            info.ImageExtent.Height = (uint)Height;
-            khrSwapchain.CreateSwapchain(device, &info, default, out Swapchain).ThrowIfError();
+            info.imageExtent.width = (uint)Width;
+            info.imageExtent.height = (uint)Height;
+            _vd.vkCreateSwapchainKHR(&info, default, out Swapchain).ThrowIfError();
             uint imageCount;
-            khrSwapchain.GetSwapchainImages(device, Swapchain, &imageCount, null).ThrowIfError();
+            _vd.vkGetSwapchainImagesKHR(Swapchain, &imageCount, null).ThrowIfError();
             ImageCount = imageCount;
-            var backbuffers = stackalloc Image[16];
+            Span<VkImage> backbuffers = stackalloc VkImage[16];
             //     IM_ASSERT(wd.ImageCount >= min_image_count);
             //     IM_ASSERT(wd.ImageCount < IM_COUNTOF(backbuffers));
-            khrSwapchain
-                .GetSwapchainImages(device, Swapchain, &imageCount, backbuffers)
-                .ThrowIfError();
+            _vd.vkGetSwapchainImagesKHR(Swapchain, backbuffers).ThrowIfError();
 
             SemaphoreCount = ImageCount + 1;
             // Frames.resize(wd.ImageCount);
@@ -306,8 +280,8 @@ class ImGui_ImplVulkanH_Window : IDisposable
                 FrameSemaphores.Add(new());
             }
         }
-        if (old_swapchain is SwapchainKHR _old_swapchain)
-            khrSwapchain.DestroySwapchain(device, _old_swapchain, default);
+        if (old_swapchain is VkSwapchainKHR _old_swapchain)
+            _vd.vkDestroySwapchainKHR(_old_swapchain, default);
 
         // Create the Render Pass
         // if (UseDynamicRendering == false)
@@ -337,7 +311,7 @@ class ImGui_ImplVulkanH_Window : IDisposable
         //     };
         //     var info = new RenderPassCreateInfo
         //     {
-        //         SType = StructureType.RenderPassCreateInfo,
+        //         SType = VK_STRUCTURE_TYPE_RenderPassCreateInfo,
         //         AttachmentCount = 1,
         //         PAttachments = &attachment,
         //         SubpassCount = 1,
@@ -354,32 +328,32 @@ class ImGui_ImplVulkanH_Window : IDisposable
 
         // Create The Image Views
         {
-            var info = new ImageViewCreateInfo
+            var info = new VkImageViewCreateInfo
             {
-                SType = StructureType.ImageViewCreateInfo,
-                ViewType = ImageViewType.Type2D,
-                Format = SurfaceFormat.Format,
-                Components = new ComponentMapping
+                sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+                viewType = VkImageViewType.Image2D,
+                format = SurfaceFormat.format,
+                components = new VkComponentMapping
                 {
-                    R = ComponentSwizzle.R,
-                    G = ComponentSwizzle.G,
-                    B = ComponentSwizzle.B,
-                    A = ComponentSwizzle.A,
+                    r = VkComponentSwizzle.R,
+                    g = VkComponentSwizzle.G,
+                    b = VkComponentSwizzle.B,
+                    a = VkComponentSwizzle.A,
                 },
-                SubresourceRange = new ImageSubresourceRange
+                subresourceRange = new VkImageSubresourceRange
                 {
-                    AspectMask = ImageAspectFlags.ColorBit,
-                    BaseMipLevel = 0,
-                    LevelCount = 1,
-                    BaseArrayLayer = 0,
-                    LayerCount = 1,
+                    aspectMask = VkImageAspectFlags.Color,
+                    baseMipLevel = 0,
+                    levelCount = 1,
+                    baseArrayLayer = 0,
+                    layerCount = 1,
                 },
             };
             for (int i = 0; i < ImageCount; i++)
             {
                 var fd = Frames[i];
-                info.Image = fd.Backbuffer;
-                vk.CreateImageView(device, &info, default, out fd.BackbufferView).ThrowIfError();
+                info.image = fd.Backbuffer;
+                _vd.vkCreateImageView(&info, default, out fd.BackbufferView).ThrowIfError();
             }
         }
 
@@ -389,7 +363,7 @@ class ImGui_ImplVulkanH_Window : IDisposable
         //     var attachment = stackalloc ImageView[1];
         //     var info = new FramebufferCreateInfo
         //     {
-        //         SType = StructureType.FramebufferCreateInfo,
+        //         SType = VK_STRUCTURE_TYPE_FramebufferCreateInfo,
         //         RenderPass = RenderPass,
         //         AttachmentCount = 1,
         //         PAttachments = attachment,
@@ -406,11 +380,7 @@ class ImGui_ImplVulkanH_Window : IDisposable
         // }
     }
 
-    private unsafe void ImGui_ImplVulkanH_CreateWindowCommandBuffers(
-        PhysicalDevice physical_device,
-        Device device,
-        uint queue_family
-    )
+    private unsafe void ImGui_ImplVulkanH_CreateWindowCommandBuffers(uint queue_family)
     {
         // IM_ASSERT(physical_device != VK_NULL_HANDLE && device != VK_NULL_HANDLE);
         // IM_UNUSED(physical_device);
@@ -420,31 +390,33 @@ class ImGui_ImplVulkanH_Window : IDisposable
         {
             var fd = Frames[i];
             {
-                var info = new CommandPoolCreateInfo
+                var info = new VkCommandPoolCreateInfo
                 {
-                    SType = StructureType.CommandPoolCreateInfo,
-                    Flags = 0,
-                    QueueFamilyIndex = queue_family,
+                    sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+                    flags = 0,
+                    queueFamilyIndex = queue_family,
                 };
-                vk.CreateCommandPool(device, &info, default, out fd.CommandPool).ThrowIfError();
+                _vd.vkCreateCommandPool(&info, default, out fd.CommandPool).ThrowIfError();
             }
             {
-                var info = new CommandBufferAllocateInfo
+                var info = new VkCommandBufferAllocateInfo
                 {
-                    SType = StructureType.CommandBufferAllocateInfo,
-                    CommandPool = fd.CommandPool,
-                    Level = CommandBufferLevel.Primary,
-                    CommandBufferCount = 1,
+                    sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+                    commandPool = fd.CommandPool,
+                    level = VkCommandBufferLevel.Primary,
+                    commandBufferCount = 1,
                 };
-                vk.AllocateCommandBuffers(device, &info, out fd.CommandBuffer).ThrowIfError();
+                VkCommandBuffer commandBuffer;
+                _vd.vkAllocateCommandBuffers(&info, &commandBuffer).ThrowIfError();
+                fd.CommandBuffer = commandBuffer;
             }
             {
-                var info = new FenceCreateInfo
+                var info = new VkFenceCreateInfo
                 {
-                    SType = StructureType.FenceCreateInfo,
-                    Flags = FenceCreateFlags.SignaledBit,
+                    sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+                    flags = VkFenceCreateFlags.Signaled,
                 };
-                vk.CreateFence(device, &info, default, out fd.Fence).ThrowIfError();
+                _vd.vkCreateFence(&info, default, out fd.Fence).ThrowIfError();
             }
         }
 
@@ -452,10 +424,13 @@ class ImGui_ImplVulkanH_Window : IDisposable
         {
             var fsd = FrameSemaphores[i];
             {
-                var info = new SemaphoreCreateInfo { SType = StructureType.SemaphoreCreateInfo };
-                vk.CreateSemaphore(device, &info, default, out fsd.ImageAcquiredSemaphore)
+                var info = new VkSemaphoreCreateInfo
+                {
+                    sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+                };
+                _vd.vkCreateSemaphore(&info, default, out fsd.ImageAcquiredSemaphore)
                     .ThrowIfError();
-                vk.CreateSemaphore(device, &info, default, out fsd.RenderCompleteSemaphore)
+                _vd.vkCreateSemaphore(&info, default, out fsd.RenderCompleteSemaphore)
                     .ThrowIfError();
             }
         }
@@ -464,14 +439,14 @@ class ImGui_ImplVulkanH_Window : IDisposable
     // Create or resize window
     // - 2025/09/26: v1.92.4 added a trailing 'VkImageUsageFlags image_usage' parameter which is usually VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT.
     unsafe void ImGui_ImplVulkanH_CreateOrResizeWindow(
-        Instance instance,
-        PhysicalDevice physical_device,
-        Device device,
+        VkInstance instance,
+        VkPhysicalDevice physical_device,
+        VkDevice device,
         uint queue_family,
         int width,
         int height,
         uint min_image_count,
-        ImageUsageFlags image_usage
+        VkImageUsageFlags image_usage
     )
     {
         // IM_ASSERT(g_FunctionsLoaded && "Need to call ImGui_ImplVulkan_LoadFunctions() if IMGUI_IMPL_VULKAN_NO_PROTOTYPES or VK_NO_PROTOTYPES are set!");
@@ -486,59 +461,59 @@ class ImGui_ImplVulkanH_Window : IDisposable
             min_image_count,
             image_usage
         );
-        ImGui_ImplVulkanH_CreateWindowCommandBuffers(physical_device, device, queue_family);
+        ImGui_ImplVulkanH_CreateWindowCommandBuffers(queue_family);
 
         // FIXME: to submit the command buffer, we need a queue. In the examples folder, the ImGui_ImplVulkanH_CreateOrResizeWindow function is called
         // before the ImGui_ImplVulkan_Init function, so we don't have access to the queue yet. Here we have the queue_family that we can use to grab
         // a queue from the device and submit the command buffer. It would be better to have access to the queue as suggested in the FIXME below.
-        CommandPool command_pool;
-        var pool_info = new CommandPoolCreateInfo
+        VkCommandPool command_pool;
+        var pool_info = new VkCommandPoolCreateInfo
         {
-            SType = StructureType.CommandPoolCreateInfo,
-            QueueFamilyIndex = queue_family,
+            sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+            queueFamilyIndex = queue_family,
         };
-        vk.CreateCommandPool(device, &pool_info, default, &command_pool).ThrowIfError();
+        _vd.vkCreateCommandPool(&pool_info, default, &command_pool).ThrowIfError();
 
-        var fence_info = new FenceCreateInfo { SType = StructureType.FenceCreateInfo };
-        Fence fence;
-        vk.CreateFence(device, &fence_info, default, &fence).ThrowIfError();
+        var fence_info = new VkFenceCreateInfo { sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
+        VkFence fence;
+        _vd.vkCreateFence(&fence_info, default, &fence).ThrowIfError();
 
-        var alloc_info = new CommandBufferAllocateInfo
+        var alloc_info = new VkCommandBufferAllocateInfo
         {
-            SType = StructureType.CommandBufferAllocateInfo,
-            CommandPool = command_pool,
-            Level = CommandBufferLevel.Primary,
-            CommandBufferCount = 1,
+            sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            commandPool = command_pool,
+            level = VkCommandBufferLevel.Primary,
+            commandBufferCount = 1,
         };
-        CommandBuffer command_buffer;
-        vk.AllocateCommandBuffers(device, &alloc_info, &command_buffer).ThrowIfError();
+        VkCommandBuffer command_buffer;
+        _vd.vkAllocateCommandBuffers(&alloc_info, &command_buffer).ThrowIfError();
 
-        var begin_info = new CommandBufferBeginInfo
+        var begin_info = new VkCommandBufferBeginInfo
         {
-            SType = StructureType.CommandBufferBeginInfo,
-            Flags = CommandBufferUsageFlags.OneTimeSubmitBit,
+            sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+            flags = VkCommandBufferUsageFlags.OneTimeSubmit,
         };
-        vk.BeginCommandBuffer(command_buffer, &begin_info).ThrowIfError();
+        _vd.vkBeginCommandBuffer(command_buffer, &begin_info).ThrowIfError();
 
         // Transition the images to the correct layout for rendering
         for (int i = 0; i < ImageCount; i++)
         {
-            var barrier = new ImageMemoryBarrier
+            var barrier = new VkImageMemoryBarrier
             {
-                SType = StructureType.ImageMemoryBarrier,
-                Image = Frames[i].Backbuffer,
-                OldLayout = ImageLayout.Undefined,
-                NewLayout = ImageLayout.PresentSrcKhr,
-                SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
-                DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
+                sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                image = Frames[i].Backbuffer,
+                oldLayout = VkImageLayout.Undefined,
+                newLayout = VkImageLayout.PresentSrcKHR,
+                srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
             };
-            barrier.SubresourceRange.AspectMask = ImageAspectFlags.ColorBit;
-            barrier.SubresourceRange.LevelCount = 1;
-            barrier.SubresourceRange.LayerCount = 1;
-            vk.CmdPipelineBarrier(
+            barrier.subresourceRange.aspectMask = VkImageAspectFlags.Color;
+            barrier.subresourceRange.levelCount = 1;
+            barrier.subresourceRange.layerCount = 1;
+            _vd.vkCmdPipelineBarrier(
                 command_buffer,
-                PipelineStageFlags.BottomOfPipeBit,
-                PipelineStageFlags.ColorAttachmentOutputBit,
+                VkPipelineStageFlags.BottomOfPipe,
+                VkPipelineStageFlags.ColorAttachmentOutput,
                 0,
                 0,
                 null,
@@ -549,81 +524,65 @@ class ImGui_ImplVulkanH_Window : IDisposable
             );
         }
 
-        vk.EndCommandBuffer(command_buffer).ThrowIfError();
-        var submit_info = new SubmitInfo
+        _vd.vkEndCommandBuffer(command_buffer).ThrowIfError();
+        var submit_info = new VkSubmitInfo
         {
-            SType = StructureType.SubmitInfo,
-            CommandBufferCount = 1,
-            PCommandBuffers = &command_buffer,
+            sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+            commandBufferCount = 1,
+            pCommandBuffers = &command_buffer,
         };
 
-        Queue queue;
-        vk.GetDeviceQueue(device, queue_family, 0, &queue);
-        vk.QueueSubmit(queue, 1, &submit_info, fence).ThrowIfError();
-        vk.WaitForFences(device, 1, &fence, Vk.True, uint.MaxValue).ThrowIfError();
-        vk.ResetFences(device, 1, &fence).ThrowIfError();
+        VkQueue queue;
+        _vd.vkGetDeviceQueue(queue_family, 0, &queue);
+        _vd.vkQueueSubmit(queue, 1, &submit_info, fence).ThrowIfError();
+        _vd.vkWaitForFences(1, &fence, true, uint.MaxValue).ThrowIfError();
+        _vd.vkResetFences(1, &fence).ThrowIfError();
 
-        vk.ResetCommandPool(device, command_pool, 0).ThrowIfError();
+        _vd.vkResetCommandPool(command_pool, 0).ThrowIfError();
 
         // Destroy command buffer and fence and command pool
-        vk.FreeCommandBuffers(device, command_pool, 1, &command_buffer);
-        vk.DestroyCommandPool(device, command_pool, default);
-        vk.DestroyFence(device, fence, default);
+        _vd.vkFreeCommandBuffers(command_pool, 1, &command_buffer);
+        _vd.vkDestroyCommandPool(command_pool, default);
+        _vd.vkDestroyFence(fence, default);
     }
 
     // All the ImGui_ImplVulkanH_XXX structures/functions are optional helpers used by the demo.
     // Your real engine/app may not use them.
     public ImGui_ImplVulkanH_Window(
-        Vk _vk,
-        Instance instance,
-        PhysicalDevice physicalDevice,
+        VkInstanceApi vi,
+        VkDeviceApi vd,
+        VkInstance instance,
+        VkPhysicalDevice physicalDevice,
         uint queueFamily,
-        Device device,
-        SurfaceKHR surface,
+        VkDevice device,
+        VkSurfaceKHR surface,
         int width,
         int height,
         uint minImageCount
     )
     {
-        vk = _vk;
+        _vi = vi;
+        _vd = vd;
         Instance = instance;
         PhysicalDevice = physicalDevice;
         QueueFamily = queueFamily;
         Device = device;
-        Queue = vk.GetDeviceQueue(Device, QueueFamily, 0);
+        _vd.vkGetDeviceQueue(QueueFamily, 0, out Queue);
         Surface = surface;
 
-        if (!vk.TryGetInstanceExtension(instance, out khrSurface))
-        {
-            throw new Exception("TryGetInstanceExtension<KhrSurface>");
-        }
-
-        if (!vk.TryGetDeviceExtension(instance, device, out khrSwapchain))
-        {
-            throw new Exception("TryGetInstanceExtension<KhrSwapchain>");
-        }
-
         // Check for WSI support
-        khrSurface.GetPhysicalDeviceSurfaceSupport(
-            PhysicalDevice,
-            QueueFamily,
-            Surface,
-            out var res
-        );
-        if (res != Vk.True)
-        {
-            throw new Exception("Error no WSI support on physical device 0");
-        }
+        _vi.vkGetPhysicalDeviceSurfaceSupportKHR(PhysicalDevice, QueueFamily, Surface, out var res)
+            .CheckResult();
 
         // Select Surface Format
-        ReadOnlySpan<Format> requestSurfaceImageFormat =
+        ReadOnlySpan<VkFormat> requestSurfaceImageFormat =
         [
-            Format.B8G8R8A8Unorm,
-            Format.R8G8B8A8Unorm,
-            Format.B8G8R8Unorm,
-            Format.R8G8B8Unorm,
+            VkFormat.B8G8R8A8Unorm,
+            VkFormat.R8G8B8A8Unorm,
+            VkFormat.B8G8R8Unorm,
+            VkFormat.R8G8B8Unorm,
         ];
-        var requestSurfaceColorSpace = ColorSpaceKHR.SpaceSrgbNonlinearKhr;
+        var requestSurfaceColorSpace = VkColorSpaceKHR.SrgbNonLinear;
         SurfaceFormat = ImGui_ImplVulkanH_SelectSurfaceFormat(
             PhysicalDevice,
             Surface,
@@ -640,7 +599,7 @@ class ImGui_ImplVulkanH_Window : IDisposable
             PresentModeKHR.FifoKhr,
         ];
 #else
-        ReadOnlySpan<PresentModeKHR> present_modes = [PresentModeKHR.FifoKhr];
+        ReadOnlySpan<VkPresentModeKHR> present_modes = [VkPresentModeKHR.Fifo];
 #endif
         PresentMode = ImGui_ImplVulkanH_SelectPresentMode(PhysicalDevice, Surface, present_modes);
         //printf("[vulkan] Selected PresentMode = %d\n", wd.PresentMode);
@@ -652,7 +611,7 @@ class ImGui_ImplVulkanH_Window : IDisposable
         int width,
         int height,
         uint minImageCount,
-        ImageUsageFlags imageUsageFlags
+        VkImageUsageFlags imageUsageFlags
     )
     {
         // Create SwapChain, RenderPass, Framebuffer, etc.
@@ -672,22 +631,22 @@ class ImGui_ImplVulkanH_Window : IDisposable
     public unsafe void Dispose()
     {
         ImGui_ImplVulkanH_DestroyWindow(Instance, Device);
-        khrSurface.DestroySurface(Instance, Surface, default);
+        _vi.vkDestroySurfaceKHR(Surface, default);
     }
 
-    unsafe void ImGui_ImplVulkanH_DestroyWindow(Instance instance, Device device)
+    unsafe void ImGui_ImplVulkanH_DestroyWindow(VkInstance instance, VkDevice device)
     {
         // IM_UNUSED(instance);
-        vk.DeviceWaitIdle(device); // FIXME: We could wait on the Queue if we had the queue in  (otherwise VulkanH functions can't use globals)
+        _vd.vkDeviceWaitIdle(); // FIXME: We could wait on the Queue if we had the queue in  (otherwise VulkanH functions can't use globals)
         //vkQueueWaitIdle(bd->Queue);
 
         for (int i = 0; i < ImageCount; i++)
-            ImGui_ImplVulkanH_DestroyFrame(device, Frames[i]);
+            ImGui_ImplVulkanH_DestroyFrame(Frames[i]);
         for (int i = 0; i < SemaphoreCount; i++)
-            ImGui_ImplVulkanH_DestroyFrameSemaphores(device, FrameSemaphores[i]);
+            ImGui_ImplVulkanH_DestroyFrameSemaphores(FrameSemaphores[i]);
         Frames.Clear();
         FrameSemaphores.Clear();
-        khrSwapchain.DestroySwapchain(device, Swapchain, default);
+        _vd.vkDestroySwapchainKHR(Swapchain, default);
         Swapchain = default;
         // vk.DestroyRenderPass(device, RenderPass, default);
         // RenderPass = default;
@@ -716,15 +675,16 @@ class ImGui_ImplVulkanH_Window : IDisposable
         }
     }
 
-    public unsafe (uint, Semaphore, Semaphore, CommandBuffer)? BeginRender(ClearValue clearValue)
+    public unsafe (uint, VkSemaphore, VkSemaphore, VkCommandBuffer)? BeginRender(
+        VkClearValue clearValue
+    )
     {
         var image_acquired_semaphore = FrameSemaphores[(int)SemaphoreIndex].ImageAcquiredSemaphore;
         var render_complete_semaphore = FrameSemaphores[
             (int)SemaphoreIndex
         ].RenderCompleteSemaphore;
         uint frameIndex;
-        var err = khrSwapchain.AcquireNextImage(
-            Device,
+        var err = _vd.vkAcquireNextImageKHR(
             Swapchain,
             uint.MaxValue,
             image_acquired_semaphore,
@@ -732,61 +692,61 @@ class ImGui_ImplVulkanH_Window : IDisposable
             &frameIndex
         );
         FrameIndex = frameIndex;
-        if (err == Result.ErrorOutOfDateKhr || err == Result.SuboptimalKhr)
+        if (err == VK_ERROR_OUT_OF_DATE_KHR || err == VK_SUBOPTIMAL_KHR)
             g_SwapChainRebuild = true;
 
-        if (err == Result.ErrorOutOfDateKhr)
+        if (err == VkResult.ErrorOutOfDateKHR)
             return default;
 
-        if (err != Result.SuboptimalKhr)
+        if (err != VkResult.SuboptimalKHR)
             err.ThrowIfError();
 
         var fd = Frames[(int)FrameIndex];
         {
             var fence = fd.Fence;
             // wait indefinitely instead of periodically checking
-            vk.WaitForFences(Device, 1, &fence, Vk.True, uint.MaxValue).ThrowIfError();
-            vk.ResetFences(Device, 1, &fence).ThrowIfError();
+            _vd.vkWaitForFences(1, &fence, true, uint.MaxValue).ThrowIfError();
+            _vd.vkResetFences(1, &fence).ThrowIfError();
         }
         {
-            vk.ResetCommandPool(Device, fd.CommandPool, 0).ThrowIfError();
-            var info = new CommandBufferBeginInfo
+            _vd.vkResetCommandPool(fd.CommandPool, 0).ThrowIfError();
+            var info = new VkCommandBufferBeginInfo
             {
-                SType = StructureType.CommandBufferBeginInfo,
-                Flags = CommandBufferUsageFlags.OneTimeSubmitBit,
+                sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+                flags = VkCommandBufferUsageFlags.OneTimeSubmit,
             };
-            vk.BeginCommandBuffer(fd.CommandBuffer, &info).ThrowIfError();
+            _vd.vkBeginCommandBuffer(fd.CommandBuffer, &info).ThrowIfError();
         }
         if (UseDynamicRendering)
         {
-            var color_attachment_info = new RenderingAttachmentInfo
+            var color_attachment_info = new VkRenderingAttachmentInfo
             {
-                SType = StructureType.RenderingAttachmentInfo,
-                ImageView = fd.BackbufferView,
-                ImageLayout = ImageLayout.ColorAttachmentOptimal,
-                LoadOp = AttachmentLoadOp.Clear,
-                StoreOp = AttachmentStoreOp.Store,
-                ClearValue = clearValue,
+                sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+                imageView = fd.BackbufferView,
+                imageLayout = VkImageLayout.ColorAttachmentOptimal,
+                loadOp = VkAttachmentLoadOp.Clear,
+                storeOp = VkAttachmentStoreOp.Store,
+                clearValue = clearValue,
             };
             // var depth_attachment_info = new RenderingAttachmentInfo()
             // {
-            //     SType = StructureType.RenderingAttachmentInfo,
+            //     SType = VK_STRUCTURE_TYPE_RenderingAttachmentInfo,
             //     ImageView = DepthImageView,
             //     ImageLayout = ImageLayout.DepthAttachmentOptimal,
             //     LoadOp = depthLoadOp,
             //     StoreOp = depthStoreOp,
             //     ClearValue = new ClearValue { DepthStencil = clearDepthStencil },
             // };
-            var render_info = new RenderingInfo
+            var render_info = new VkRenderingInfo
             {
-                SType = StructureType.RenderingInfo,
-                RenderArea = new()
+                sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+                renderArea = new()
                 {
-                    Extent = new Extent2D { Width = (uint)Width, Height = (uint)Height },
+                    extent = new VkExtent2D { width = (uint)Width, height = (uint)Height },
                 },
-                LayerCount = 1,
-                ColorAttachmentCount = 1,
-                PColorAttachments = &color_attachment_info,
+                layerCount = 1,
+                colorAttachmentCount = 1,
+                pColorAttachments = &color_attachment_info,
                 // PDepthAttachment = &depth_attachment_info,
                 // PStencilAttachment = &depth_attachment_info,
             };
@@ -797,14 +757,14 @@ class ImGui_ImplVulkanH_Window : IDisposable
             //     fd.Backbuffer,
             //     ImageLayout.ColorAttachmentOptimal
             // );
-            vk.CmdBeginRendering(fd.CommandBuffer, &render_info);
+            _vd.vkCmdBeginRendering(fd.CommandBuffer, &render_info);
         }
         else
         {
             throw new NotImplementedException();
             // var info = new RenderPassBeginInfo
             // {
-            //     SType = StructureType.RenderPassBeginInfo,
+            //     SType = VK_STRUCTURE_TYPE_RenderPassBeginInfo,
             //     RenderPass = RenderPass,
             //     Framebuffer = fd.Framebuffer,
             //     RenderArea = new Rect2D
@@ -820,8 +780,8 @@ class ImGui_ImplVulkanH_Window : IDisposable
     }
 
     public unsafe void EndRender(
-        Semaphore image_acquired_semaphore,
-        Semaphore render_complete_semaphore
+        VkSemaphore image_acquired_semaphore,
+        VkSemaphore render_complete_semaphore
     )
     {
         var fd = Frames[(int)FrameIndex];
@@ -831,30 +791,35 @@ class ImGui_ImplVulkanH_Window : IDisposable
         // Submit command buffer
         if (UseDynamicRendering)
         {
-            vk.CmdEndRendering(fd.CommandBuffer);
-            TransitionImageLayout(vk, fd.CommandBuffer, fd.Backbuffer, ImageLayout.PresentSrcKhr);
+            _vd.vkCmdEndRendering(fd.CommandBuffer);
+            TransitionImageLayout(
+                _vd,
+                fd.CommandBuffer,
+                fd.Backbuffer,
+                VkImageLayout.PresentSrcKHR
+            );
         }
         else
         {
             throw new NotImplementedException();
-            vk.CmdEndRenderPass(fd.CommandBuffer);
+            // _vd.vkCmdEndRenderPass(fd.CommandBuffer);
         }
         {
             var commandBuffer = fd.CommandBuffer;
-            var wait_stage = PipelineStageFlags.ColorAttachmentOutputBit;
-            var info = new SubmitInfo
+            var wait_stage = VkPipelineStageFlags.ColorAttachmentOutput;
+            var info = new VkSubmitInfo
             {
-                SType = StructureType.SubmitInfo,
-                WaitSemaphoreCount = 1,
-                PWaitSemaphores = &image_acquired_semaphore,
-                PWaitDstStageMask = &wait_stage,
-                CommandBufferCount = 1,
-                PCommandBuffers = &commandBuffer,
-                SignalSemaphoreCount = 1,
-                PSignalSemaphores = &render_complete_semaphore,
+                sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+                waitSemaphoreCount = 1,
+                pWaitSemaphores = &image_acquired_semaphore,
+                pWaitDstStageMask = &wait_stage,
+                commandBufferCount = 1,
+                pCommandBuffers = &commandBuffer,
+                signalSemaphoreCount = 1,
+                pSignalSemaphores = &render_complete_semaphore,
             };
-            vk.EndCommandBuffer(fd.CommandBuffer).ThrowIfError();
-            vk.QueueSubmit(Queue, 1, &info, fd.Fence).ThrowIfError();
+            _vd.vkEndCommandBuffer(fd.CommandBuffer).ThrowIfError();
+            _vd.vkQueueSubmit(Queue, 1, &info, fd.Fence).ThrowIfError();
         }
 
         if (!g_SwapChainRebuild)
@@ -864,62 +829,62 @@ class ImGui_ImplVulkanH_Window : IDisposable
             // ].RenderCompleteSemaphore;
             var swapchain = Swapchain;
             var frameIndex = FrameIndex;
-            var info = new PresentInfoKHR
+            var info = new VkPresentInfoKHR
             {
-                SType = StructureType.PresentInfoKhr,
-                WaitSemaphoreCount = 1,
-                PWaitSemaphores = &render_complete_semaphore,
-                SwapchainCount = 1,
-                PSwapchains = &swapchain,
-                PImageIndices = &frameIndex,
+                sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+                waitSemaphoreCount = 1,
+                pWaitSemaphores = &render_complete_semaphore,
+                swapchainCount = 1,
+                pSwapchains = &swapchain,
+                pImageIndices = &frameIndex,
             };
-            var err = khrSwapchain.QueuePresent(Queue, &info);
-            if (err == Result.ErrorOutOfDateKhr || err == Result.SuboptimalKhr)
+            var err = _vd.vkQueuePresentKHR(Queue, &info);
+            if (err == VkResult.ErrorOutOfDateKHR || err == VkResult.SuboptimalKHR)
                 g_SwapChainRebuild = true;
-            if (err == Result.ErrorOutOfDateKhr)
+            if (err == VkResult.ErrorOutOfDateKHR)
                 return;
-            if (err != Result.SuboptimalKhr)
+            if (err != VkResult.SuboptimalKHR)
                 err.ThrowIfError();
             SemaphoreIndex = (SemaphoreIndex + 1) % SemaphoreCount; // Now we can use the next set of semaphores
         }
     }
 
     public static unsafe void TransitionImageLayout(
-        Vk vk,
-        CommandBuffer commandBuffer,
-        Image image,
-        ImageLayout newLayout
+        VkDeviceApi vd,
+        VkCommandBuffer commandBuffer,
+        VkImage image,
+        VkImageLayout newLayout
     )
     {
-        ImageMemoryBarrier barrier = new()
+        VkImageMemoryBarrier barrier = new()
         {
-            SType = StructureType.ImageMemoryBarrier,
-            OldLayout = ImageLayout.Undefined,
-            NewLayout = newLayout,
-            SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
-            DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
-            Image = image,
-            SubresourceRange =
+            sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            oldLayout = VkImageLayout.Undefined,
+            newLayout = newLayout,
+            srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            image = image,
+            subresourceRange =
             {
-                AspectMask = ImageAspectFlags.ColorBit,
-                BaseMipLevel = 0,
-                LevelCount = 1,
-                BaseArrayLayer = 0,
-                LayerCount = 1,
+                aspectMask = VkImageAspectFlags.Color,
+                baseMipLevel = 0,
+                levelCount = 1,
+                baseArrayLayer = 0,
+                layerCount = 1,
             },
         };
 
-        vk.CmdPipelineBarrier(
+        vd.vkCmdPipelineBarrier(
             commandBuffer,
-            PipelineStageFlags.BottomOfPipeBit,
-            PipelineStageFlags.TopOfPipeBit,
+            VkPipelineStageFlags.BottomOfPipe,
+            VkPipelineStageFlags.TopOfPipe,
             0,
             0,
             null,
             0,
             null,
             1,
-            in barrier
+            &barrier
         );
     }
 }

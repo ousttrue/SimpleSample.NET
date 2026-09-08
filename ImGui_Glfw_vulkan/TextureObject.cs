@@ -1,87 +1,91 @@
 using System.Runtime.CompilerServices;
-using Silk.NET.Vulkan;
-using Buffer = Silk.NET.Vulkan.Buffer;
+using Vortice.Vulkan;
+using static Vortice.Vulkan.Vulkan;
 
 public class TextureObject : IDisposable
 {
-    private readonly Vk _vk;
-    private readonly Device _device;
+    private readonly VkInstanceApi _vi;
+    private readonly VkDeviceApi _vd;
+    private readonly VkDevice _device;
     public readonly uint Width;
     public readonly uint Height;
-    public readonly Image Image;
-    private readonly DeviceMemory _memory;
-    public readonly ImageView ImageView;
-    public readonly Sampler Sampler;
+    public readonly VkImage Image;
+    private readonly VkDeviceMemory _memory;
+    public readonly VkImageView ImageView;
+    public readonly VkSampler Sampler;
 
     public unsafe TextureObject(
-        Vk vk,
-        PhysicalDevice physicalDevice,
-        Device device,
+        VkInstanceApi vi,
+        VkDeviceApi vd,
+        VkPhysicalDevice physicalDevice,
+        VkDevice device,
         uint width,
         uint height,
-        ImageUsageFlags usage
+        VkImageUsageFlags usage
     )
     {
-        _vk = vk;
+        _vi = vi;
+        _vd = vd;
         _device = device;
         Width = width;
         Height = height;
 
         CreateImage(
-            _vk,
+            vi,
+            _vd,
             physicalDevice,
             _device,
             width,
             height,
-            Format.R8G8B8A8Unorm,
-            ImageTiling.Optimal,
+            VkFormat.R8G8B8A8Unorm,
+            VkImageTiling.Optimal,
             usage, //ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit,
-            MemoryPropertyFlags.DeviceLocalBit,
+            VkMemoryPropertyFlags.DeviceLocal,
             out Image,
             out _memory
         );
 
         ImageView = CreateImageView(
-            _vk,
+            _vd,
             _device,
             Image,
-            Format.R8G8B8A8Unorm,
-            ImageAspectFlags.ColorBit
+            VkFormat.R8G8B8A8Unorm,
+            VkImageAspectFlags.Color
         );
 
-        var info = new SamplerCreateInfo
+        var info = new VkSamplerCreateInfo
         {
-            SType = StructureType.SamplerCreateInfo,
-            MagFilter = Filter.Linear,
-            MinFilter = Filter.Linear,
-            MipmapMode = SamplerMipmapMode.Linear,
-            AddressModeU = SamplerAddressMode.Repeat,
-            AddressModeV = SamplerAddressMode.Repeat,
-            AddressModeW = SamplerAddressMode.Repeat,
-            MinLod = -1000,
-            MaxLod = 1000,
-            MaxAnisotropy = 1.0f,
+            sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+            magFilter = VkFilter.Linear,
+            minFilter = VkFilter.Linear,
+            mipmapMode = VkSamplerMipmapMode.Linear,
+            addressModeU = VkSamplerAddressMode.Repeat,
+            addressModeV = VkSamplerAddressMode.Repeat,
+            addressModeW = VkSamplerAddressMode.Repeat,
+            minLod = -1000,
+            maxLod = 1000,
+            maxAnisotropy = 1.0f,
         };
-        if (vk.CreateSampler(_device, in info, default, out Sampler) != Result.Success)
+        if (_vd.vkCreateSampler(in info, default, out Sampler) != VK_SUCCESS)
         {
             throw new Exception($"Unable to create sampler");
         }
     }
 
-    public static unsafe ImageView CreateImageView(
-        Vk vk,
-        Device device,
-        Image image,
-        Format format,
-        ImageAspectFlags aspectFlags
+    public static unsafe VkImageView CreateImageView(
+        VkDeviceApi vd,
+        VkDevice device,
+        VkImage image,
+        VkFormat format,
+        VkImageAspectFlags aspectFlags
     )
     {
-        ImageViewCreateInfo createInfo = new()
+        VkImageViewCreateInfo createInfo = new()
         {
-            SType = StructureType.ImageViewCreateInfo,
-            Image = image,
-            ViewType = ImageViewType.Type2D,
-            Format = format,
+            sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            image = image,
+            viewType = VkImageViewType.Image2D,
+            format = format,
             //Components =
             //    {
             //        R = ComponentSwizzle.Identity,
@@ -89,20 +93,17 @@ public class TextureObject : IDisposable
             //        B = ComponentSwizzle.Identity,
             //        A = ComponentSwizzle.Identity,
             //    },
-            SubresourceRange =
+            subresourceRange =
             {
-                AspectMask = aspectFlags,
-                BaseMipLevel = 0,
-                LevelCount = 1,
-                BaseArrayLayer = 0,
-                LayerCount = 1,
+                aspectMask = aspectFlags,
+                baseMipLevel = 0,
+                levelCount = 1,
+                baseArrayLayer = 0,
+                layerCount = 1,
             },
         };
 
-        if (
-            vk.CreateImageView(device, in createInfo, null, out ImageView imageView)
-            != Result.Success
-        )
+        if (vd.vkCreateImageView(in createInfo, null, out var imageView) != VK_SUCCESS)
         {
             throw new Exception("failed to create image views!");
         }
@@ -111,89 +112,87 @@ public class TextureObject : IDisposable
     }
 
     public static unsafe void CreateImage(
-        Vk vk,
-        PhysicalDevice physicalDevice,
-        Device device,
+        VkInstanceApi vi,
+        VkDeviceApi vd,
+        VkPhysicalDevice physicalDevice,
+        VkDevice device,
         uint width,
         uint height,
-        Format format,
-        ImageTiling tiling,
-        ImageUsageFlags usage,
-        MemoryPropertyFlags properties,
-        out Image image,
-        out DeviceMemory imageMemory
+        VkFormat format,
+        VkImageTiling tiling,
+        VkImageUsageFlags usage,
+        VkMemoryPropertyFlags properties,
+        out VkImage image,
+        out VkDeviceMemory imageMemory
     )
     {
-        ImageCreateInfo imageInfo = new()
+        VkImageCreateInfo imageInfo = new()
         {
-            SType = StructureType.ImageCreateInfo,
-            ImageType = ImageType.Type2D,
-            Extent =
+            sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+            imageType = VkImageType.Image2D,
+            extent =
             {
-                Width = width,
-                Height = height,
-                Depth = 1,
+                width = width,
+                height = height,
+                depth = 1,
             },
-            MipLevels = 1,
-            ArrayLayers = 1,
-            Format = format,
-            Tiling = tiling,
-            InitialLayout = ImageLayout.Undefined,
-            Usage = usage,
-            Samples = SampleCountFlags.Count1Bit,
-            SharingMode = SharingMode.Exclusive,
+            mipLevels = 1,
+            arrayLayers = 1,
+            format = format,
+            tiling = tiling,
+            initialLayout = VkImageLayout.Undefined,
+            usage = usage,
+            samples = VkSampleCountFlags.Count1,
+            sharingMode = VkSharingMode.Exclusive,
         };
 
-        fixed (Image* imagePtr = &image)
+        fixed (VkImage* imagePtr = &image)
         {
-            if (vk.CreateImage(device, in imageInfo, null, imagePtr) != Result.Success)
+            if (vd.vkCreateImage(in imageInfo, null, imagePtr) != VK_SUCCESS)
             {
                 throw new Exception("failed to create image!");
             }
         }
 
-        vk.GetImageMemoryRequirements(device, image, out MemoryRequirements memRequirements);
+        vd.vkGetImageMemoryRequirements(image, out var memRequirements);
 
-        MemoryAllocateInfo allocInfo = new()
+        VkMemoryAllocateInfo allocInfo = new()
         {
-            SType = StructureType.MemoryAllocateInfo,
-            AllocationSize = memRequirements.Size,
-            MemoryTypeIndex = FindMemoryType(
-                vk,
+            sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+            allocationSize = memRequirements.size,
+            memoryTypeIndex = FindMemoryType(
+                vi,
                 physicalDevice,
-                memRequirements.MemoryTypeBits,
+                memRequirements.memoryTypeBits,
                 properties
             ),
         };
 
-        fixed (DeviceMemory* imageMemoryPtr = &imageMemory)
+        fixed (VkDeviceMemory* imageMemoryPtr = &imageMemory)
         {
-            if (vk.AllocateMemory(device, in allocInfo, null, imageMemoryPtr) != Result.Success)
+            if (vd.vkAllocateMemory(&allocInfo, null, imageMemoryPtr) != VK_SUCCESS)
             {
                 throw new Exception("failed to allocate image memory!");
             }
         }
 
-        vk.BindImageMemory(device, image, imageMemory, 0);
+        vd.vkBindImageMemory(image, imageMemory, 0);
     }
 
     public static uint FindMemoryType(
-        Vk vk,
-        PhysicalDevice physicalDevice,
+        VkInstanceApi vi,
+        VkPhysicalDevice physicalDevice,
         uint typeFilter,
-        MemoryPropertyFlags properties
+        VkMemoryPropertyFlags properties
     )
     {
-        vk.GetPhysicalDeviceMemoryProperties(
-            physicalDevice,
-            out PhysicalDeviceMemoryProperties memProperties
-        );
+        vi.vkGetPhysicalDeviceMemoryProperties(physicalDevice, out var memProperties);
 
-        for (int i = 0; i < memProperties.MemoryTypeCount; i++)
+        for (int i = 0; i < memProperties.memoryTypeCount; i++)
         {
             if (
                 (typeFilter & (1 << i)) != 0
-                && (memProperties.MemoryTypes[i].PropertyFlags & properties) == properties
+                && (memProperties.memoryTypes[i].propertyFlags & properties) == properties
             )
             {
                 return (uint)i;
@@ -204,21 +203,23 @@ public class TextureObject : IDisposable
     }
 
     public unsafe TextureObject(
-        Vk vk,
-        PhysicalDevice physicalDevice,
-        Device device,
+        VkInstanceApi vi,
+        VkDeviceApi vd,
+        VkPhysicalDevice physicalDevice,
+        VkDevice device,
         uint width,
         uint height,
         uint graphicsQueueFamilyIndex,
         ReadOnlySpan<byte> pixels
     )
         : this(
-            vk,
+            vi,
+            vd,
             physicalDevice,
             device,
             width,
             height,
-            ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit
+            VkImageUsageFlags.Sampled | VkImageUsageFlags.TransferDst
         )
     {
         fixed (void* p = pixels)
@@ -229,14 +230,14 @@ public class TextureObject : IDisposable
 
     public unsafe void Dispose()
     {
-        _vk.DestroySampler(_device, Sampler, default);
-        _vk.DestroyImageView(_device, ImageView, default);
-        _vk.DestroyImage(_device, Image, default);
-        _vk.FreeMemory(_device, _memory, default);
+        _vd.vkDestroySampler(Sampler, default);
+        _vd.vkDestroyImageView(ImageView, default);
+        _vd.vkDestroyImage(Image, default);
+        _vd.vkFreeMemory(_memory, default);
     }
 
     public unsafe void Upload(
-        PhysicalDevice physicalDevice,
+        VkPhysicalDevice physicalDevice,
         uint graphicsQueueFamilyIndex,
         IntPtr pixels
     )
@@ -244,164 +245,154 @@ public class TextureObject : IDisposable
         var upload_size = (ulong)(Width * Height * 4 * sizeof(byte));
 
         CreateBuffer(
-            _vk,
+            _vi,
+            _vd,
             physicalDevice,
             _device,
             upload_size,
-            BufferUsageFlags.TransferSrcBit,
-            MemoryPropertyFlags.HostVisibleBit,
-            out var uploadBuffer,
-            out var uploadBufferMemory
+            VkBufferUsageFlags.TransferSrc,
+            VkMemoryPropertyFlags.HostVisible,
+            out VkBuffer uploadBuffer,
+            out VkDeviceMemory uploadBufferMemory
         );
         void* map = null;
-        if (
-            _vk.MapMemory(_device, uploadBufferMemory, 0, upload_size, 0, (void**)(&map))
-            != Result.Success
-        )
+        if (_vd.vkMapMemory(uploadBufferMemory, 0, upload_size, 0, (void**)(&map)) != VK_SUCCESS)
         {
             throw new Exception($"Failed to map device memory");
         }
         Unsafe.CopyBlock(map, pixels.ToPointer(), (uint)upload_size);
-        var range = new MappedMemoryRange
+        var range = new VkMappedMemoryRange
         {
-            SType = StructureType.MappedMemoryRange,
-            Memory = uploadBufferMemory,
-            Size = upload_size,
+            sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+            memory = uploadBufferMemory,
+            size = upload_size,
         };
-        if (_vk.FlushMappedMemoryRanges(_device, 1, in range) != Result.Success)
+        if (_vd.vkFlushMappedMemoryRanges(1, &range) != VK_SUCCESS)
         {
             throw new Exception($"Failed to flush memory to device");
         }
-        _vk.UnmapMemory(_device, uploadBufferMemory);
+        _vd.vkUnmapMemory(uploadBufferMemory);
 
-        using var ot = new OneTimeCommandBuffer(_vk, _device, graphicsQueueFamilyIndex);
+        using var ot = new OneTimeCommandBuffer(_vd, graphicsQueueFamilyIndex);
         ot.Execute(commandBuffer =>
         {
-            TransitionImageLayout(_vk, commandBuffer, Image, ImageLayout.TransferDstOptimal);
+            TransitionImageLayout(_vd, commandBuffer, Image, VkImageLayout.TransferDstOptimal);
 
-            var region = new BufferImageCopy
+            var region = new VkBufferImageCopy
             {
-                ImageSubresource = new ImageSubresourceLayers
+                imageSubresource = new() { aspectMask = VkImageAspectFlags.Color, layerCount = 1 },
+                imageExtent = new()
                 {
-                    AspectMask = ImageAspectFlags.ColorBit,
-                    LayerCount = 1,
-                },
-                ImageExtent = new Extent3D
-                {
-                    Width = Width,
-                    Height = Height,
-                    Depth = 1,
+                    width = Width,
+                    height = Height,
+                    depth = 1,
                 },
             };
-            _vk.CmdCopyBufferToImage(
+            _vd.vkCmdCopyBufferToImage(
                 commandBuffer,
                 uploadBuffer,
                 Image,
-                ImageLayout.TransferDstOptimal,
+                VkImageLayout.TransferDstOptimal,
                 1,
                 &region
             );
 
-            TransitionImageLayout(
-                _vk,
-                commandBuffer,
-                Image,
-                ImageLayout.ShaderReadOnlyOptimal
-            );
+            TransitionImageLayout(_vd, commandBuffer, Image, VkImageLayout.ShaderReadOnlyOptimal);
         });
-        _vk.DestroyBuffer(_device, uploadBuffer, default);
-        _vk.FreeMemory(_device, uploadBufferMemory, default);
+        _vd.vkDestroyBuffer(uploadBuffer, default);
+        _vd.vkFreeMemory(uploadBufferMemory, default);
     }
 
     public static unsafe void TransitionImageLayout(
-        Vk vk,
-        CommandBuffer commandBuffer,
-        Image image,
-        ImageLayout newLayout
+        VkDeviceApi vd,
+        VkCommandBuffer commandBuffer,
+        VkImage image,
+        VkImageLayout newLayout
     )
     {
-        ImageMemoryBarrier barrier = new()
+        VkImageMemoryBarrier barrier = new()
         {
-            SType = StructureType.ImageMemoryBarrier,
-            OldLayout = ImageLayout.Undefined,
-            NewLayout = newLayout,
-            SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
-            DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
-            Image = image,
-            SubresourceRange =
+            sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            oldLayout = VkImageLayout.Undefined,
+            newLayout = newLayout,
+            srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            image = image,
+            subresourceRange =
             {
-                AspectMask = ImageAspectFlags.ColorBit,
-                BaseMipLevel = 0,
-                LevelCount = 1,
-                BaseArrayLayer = 0,
-                LayerCount = 1,
+                aspectMask = VkImageAspectFlags.Color,
+                baseMipLevel = 0,
+                levelCount = 1,
+                baseArrayLayer = 0,
+                layerCount = 1,
             },
         };
 
-        vk.CmdPipelineBarrier(
+        vd.vkCmdPipelineBarrier(
             commandBuffer,
-            PipelineStageFlags.BottomOfPipeBit,
-            PipelineStageFlags.TopOfPipeBit,
+            VkPipelineStageFlags.BottomOfPipe,
+            VkPipelineStageFlags.TopOfPipe,
             0,
             0,
             null,
             0,
             null,
             1,
-            in barrier
+            &barrier
         );
     }
 
     public static unsafe void CreateBuffer(
-        Vk vk,
-        PhysicalDevice physicalDevice,
-        Device device,
+        VkInstanceApi vi,
+        VkDeviceApi vd,
+        VkPhysicalDevice physicalDevice,
+        VkDevice device,
         ulong size,
-        BufferUsageFlags usage,
-        MemoryPropertyFlags properties,
-        out Buffer buffer,
-        out DeviceMemory bufferMemory
+        VkBufferUsageFlags usage,
+        VkMemoryPropertyFlags properties,
+        out VkBuffer buffer,
+        out VkDeviceMemory bufferMemory
     )
     {
-        BufferCreateInfo bufferInfo = new()
+        VkBufferCreateInfo bufferInfo = new()
         {
-            SType = StructureType.BufferCreateInfo,
-            Size = size,
-            Usage = usage,
-            SharingMode = SharingMode.Exclusive,
+            sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+            size = size,
+            usage = usage,
+            sharingMode = VkSharingMode.Exclusive,
         };
 
-        fixed (Buffer* bufferPtr = &buffer)
+        fixed (VkBuffer* bufferPtr = &buffer)
         {
-            if (vk.CreateBuffer(device, in bufferInfo, null, bufferPtr) != Result.Success)
+            if (vd.vkCreateBuffer(in bufferInfo, null, bufferPtr) != VK_SUCCESS)
             {
                 throw new Exception("failed to create vertex buffer!");
             }
         }
 
-        MemoryRequirements memRequirements = new();
-        vk.GetBufferMemoryRequirements(device, buffer, out memRequirements);
+        VkMemoryRequirements memRequirements = new();
+        vd.vkGetBufferMemoryRequirements(buffer, out memRequirements);
 
-        MemoryAllocateInfo allocateInfo = new()
+        VkMemoryAllocateInfo allocateInfo = new()
         {
-            SType = StructureType.MemoryAllocateInfo,
-            AllocationSize = memRequirements.Size,
-            MemoryTypeIndex = FindMemoryType(
-                vk,
+            sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+            allocationSize = memRequirements.size,
+            memoryTypeIndex = FindMemoryType(
+                vi,
                 physicalDevice,
-                memRequirements.MemoryTypeBits,
+                memRequirements.memoryTypeBits,
                 properties
             ),
         };
 
-        fixed (DeviceMemory* bufferMemoryPtr = &bufferMemory)
+        fixed (VkDeviceMemory* bufferMemoryPtr = &bufferMemory)
         {
-            if (vk.AllocateMemory(device, in allocateInfo, null, bufferMemoryPtr) != Result.Success)
+            if (vd.vkAllocateMemory(&allocateInfo, null, bufferMemoryPtr) != VK_SUCCESS)
             {
                 throw new Exception("failed to allocate vertex buffer memory!");
             }
         }
 
-        vk.BindBufferMemory(device, buffer, bufferMemory, 0);
+        vd.vkBindBufferMemory(buffer, bufferMemory, 0);
     }
 }

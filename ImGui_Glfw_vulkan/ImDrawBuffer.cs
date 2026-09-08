@@ -1,27 +1,30 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using ImGuiNET;
-using Silk.NET.Vulkan;
+using Vortice.Vulkan;
+using static Vortice.Vulkan.Vulkan;
 
 class ImDrawVertBuffer : IDisposable
 {
     public ArrayBufferObject Vertex;
     public ArrayBufferObject Index;
 
-    public ImDrawVertBuffer(Vk vk, Device device)
+    public ImDrawVertBuffer(VkInstanceApi vi, VkDeviceApi vd, VkDevice device)
     {
         Vertex = new ArrayBufferObject(
-            vk,
+            vi,
+            vd,
             device,
-            BufferUsageFlags.VertexBufferBit,
-            MemoryPropertyFlags.HostVisibleBit,
+            VkBufferUsageFlags.VertexBuffer,
+            VkMemoryPropertyFlags.HostVisible,
             (uint)Marshal.SizeOf<ImDrawVert>()
         );
         Index = new ArrayBufferObject(
-            vk,
+            vi,
+            vd,
             device,
-            BufferUsageFlags.IndexBufferBit,
-            MemoryPropertyFlags.HostVisibleBit,
+            VkBufferUsageFlags.IndexBuffer,
+            VkMemoryPropertyFlags.HostVisible,
             (uint)Marshal.SizeOf<ushort>()
         );
     }
@@ -33,9 +36,8 @@ class ImDrawVertBuffer : IDisposable
     }
 
     public unsafe void UploadDrawData(
-        Vk vk,
-        PhysicalDevice physicalDevice,
-        Device device,
+        VkPhysicalDevice physicalDevice,
+        VkDevice device,
         ImDrawDataPtr drawDataPtr
     )
     {

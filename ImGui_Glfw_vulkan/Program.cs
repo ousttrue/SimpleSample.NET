@@ -2,14 +2,14 @@
 
 using System.Numerics;
 using ImGuiNET;
-using Silk.NET.Vulkan;
-using Semaphore = Silk.NET.Vulkan.Semaphore;
+using Vortice.Vulkan;
+using static Vortice.Vulkan.Vulkan;
 
 static class VkExtensions
 {
-    public static void ThrowIfError(this Result err)
+    public static void ThrowIfError(this VkResult err)
     {
-        if (err == Result.Success)
+        if (err == VK_SUCCESS)
             return;
         if (err < 0)
             throw new Exception($"[vulkan] Error: VkResult = {err}");
@@ -26,12 +26,12 @@ static unsafe class Program
         using var glfw_window = new GlfwWindow();
         var glfw_extensions = glfw_window.GetVulkanInstanceExtensions();
 
-        var vk = Vk.GetApi() ?? throw new NullReferenceException();
+        vkInitialize();
         using var vk_instance = new VulkanInstanceAndDevice(
-            vk,
             glfw_extensions,
             useDynamicRendering: true
         );
+        var (vi, vd) = vk_instance.Api;
 
         // Create Window Surface
         glfw_window.CreateSurface(vk_instance.Instance, out var surface).ThrowIfError();
@@ -39,7 +39,8 @@ static unsafe class Program
         // Create Framebuffers
         var (w, h) = glfw_window.GetFramebufferSize();
         using var g_MainWindowData = new ImGui_ImplVulkanH_Window(
-            vk,
+            vi,
+            vd,
             vk_instance.Instance,
             vk_instance.PhysicalDevice,
             vk_instance.QueueFamily,
@@ -62,9 +63,10 @@ static unsafe class Program
         // Setup Platform/Renderer backends
         using var implGlfw = ImGuiImplGlfw.InitForVulkan(glfw_window.Window, true);
         using var implVulkan = new ImGuiImplVulkan(
-            vk,
+            vi,
+            vd,
             vk_instance.Device,
-            g_MainWindowData.SurfaceFormat.Format,
+            g_MainWindowData.SurfaceFormat.format,
             g_MainWindowData.ImageCount
         );
 
@@ -91,12 +93,13 @@ static unsafe class Program
         io.Fonts.GetTexDataAsRGBA32(out pixels, out var font_width, out var font_height); // Load as RGBA 32-bit (75% of the memory is wasted, but default font is so small) because it is more likely to be compatible with user's existing shaders. If your ImTextureId represent a higher-level concept than just a GL texture id, consider calling GetTexDataAsAlpha8() instead to save on GPU memory.
         // var fontBitmap = ig.GetFontBitmap();
         using var igFontTexture = new TextureObject(
-            vk,
+            vk_instance.Api.Instance,
+            vk_instance.Api.Device,
             vk_instance.PhysicalDevice,
             vk_instance.Device,
             (uint)font_width,
             (uint)font_height,
-            ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit
+            VkImageUsageFlags.Sampled | VkImageUsageFlags.TransferDst
         );
         igFontTexture.Upload(vk_instance.PhysicalDevice, vk_instance.QueueFamily, pixels);
         var fontDesc = implVulkan.BindTexture(igFontTexture);
@@ -173,24 +176,18 @@ static unsafe class Program
             );
             if (!is_minimized)
             {
+                VkClearValue clear = default;
+                clear.color.float32[0] = clear_color.X * clear_color.W;
+                clear.color.float32[1] = clear_color.Y * clear_color.W;
+                clear.color.float32[2] = clear_color.Z * clear_color.W;
+                clear.color.float32[3] = clear_color.W;
                 if (
-                    g_MainWindowData.BeginRender(
-                        new ClearValue
-                        {
-                            Color = new ClearColorValue
-                            {
-                                Float32_0 = clear_color.X * clear_color.W,
-                                Float32_1 = clear_color.Y * clear_color.W,
-                                Float32_2 = clear_color.Z * clear_color.W,
-                                Float32_3 = clear_color.W,
-                            },
-                        }
-                    ) is
+                    g_MainWindowData.BeginRender(clear) is
                     (
                         uint frameIndex,
-                        Semaphore image_acquired_semaphore,
-                        Semaphore render_complete_semaphore,
-                        CommandBuffer commandBuffer
+                        VkSemaphore image_acquired_semaphore,
+                        VkSemaphore render_complete_semaphore,
+                        VkCommandBuffer commandBuffer
                     )
                 )
                 {
@@ -199,7 +196,7 @@ static unsafe class Program
                         draw_data,
                         commandBuffer,
                         frameIndex,
-                        new Extent2D((uint)fb_width, (uint)fb_height)
+                        new((uint)fb_width, (uint)fb_height)
                     );
                     g_MainWindowData.EndRender(image_acquired_semaphore, render_complete_semaphore);
                 }
@@ -207,7 +204,7 @@ static unsafe class Program
         }
 
         // Cleanup
-        vk.DeviceWaitIdle(vk_instance.Device).ThrowIfError();
+        vd.vkDeviceWaitIdle().ThrowIfError();
 
         return 0;
     }

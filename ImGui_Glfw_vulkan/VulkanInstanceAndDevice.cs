@@ -1,24 +1,27 @@
 // https://github.com/ocornut/imgui/blob/master/examples/example_glfw_vulkan/main.cpp
 
 using System.Runtime.InteropServices;
-using Silk.NET.Core;
-using Silk.NET.Vulkan;
-using Silk.NET.Vulkan.Extensions.EXT;
-using Silk.NET.Vulkan.Extensions.KHR;
+using System.Text;
+using Vortice.Vulkan;
+using static Vortice.Vulkan.Vulkan;
 
 unsafe class VulkanInstanceAndDevice : IDisposable
 {
-    static bool IsExtensionAvailable(ReadOnlySpan<ExtensionProperties> properties, string extension)
+    static bool IsExtensionAvailable(
+        ReadOnlySpan<VkExtensionProperties> properties,
+        string extension
+    )
     {
         foreach (var p in properties)
-            if (Marshal.PtrToStringAnsi((nint)p.ExtensionName) == extension)
+            if (Marshal.PtrToStringAnsi((nint)p.extensionName) == extension)
                 return true;
         return false;
     }
 
+    [UnmanagedCallersOnly]
     private static uint debug_report(
         uint flags,
-        DebugReportObjectTypeEXT objectType,
+        VkDebugReportObjectTypeEXT objectType,
         ulong _object,
         nuint location,
         int messageCode,
@@ -32,44 +35,48 @@ unsafe class VulkanInstanceAndDevice : IDisposable
         Console.Error.WriteLine(
             $"Message: {Marshal.PtrToStringAnsi((nint)pMessage) ?? throw new Exception()}"
         );
-        return Vk.False;
+        return VK_FALSE;
     }
 
+    [UnmanagedCallersOnly]
     private static unsafe uint DebugCallback(
-        DebugUtilsMessageSeverityFlagsEXT messageSeverity,
-        DebugUtilsMessageTypeFlagsEXT messageTypes,
-        DebugUtilsMessengerCallbackDataEXT* pCallbackData,
+        VkDebugUtilsMessageSeverityFlagsEXT messageSeverity,
+        VkDebugUtilsMessageTypeFlagsEXT messageTypes,
+        VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
         void* pUserData
     )
     {
         System.Diagnostics.Debug.WriteLine(
-            $"validation layer:" + Marshal.PtrToStringAnsi((nint)pCallbackData->PMessage)
+            $"validation layer:" + Marshal.PtrToStringAnsi((nint)pCallbackData->pMessage)
         );
 
-        return Vk.False;
+        return VK_FALSE;
     }
 
-    static PhysicalDevice ImGui_ImplVulkanH_SelectPhysicalDevice(Vk vk, Instance instance)
+    static VkPhysicalDevice ImGui_ImplVulkanH_SelectPhysicalDevice(
+        VkInstanceApi api,
+        VkInstance instance
+    )
     {
         uint gpu_count;
-        vk.EnumeratePhysicalDevices(instance, &gpu_count, null).ThrowIfError();
+        api.vkEnumeratePhysicalDevices(&gpu_count, null).ThrowIfError();
         if (gpu_count == 0)
         {
             throw new Exception("no gpu");
         }
 
-        var gpus = stackalloc PhysicalDevice[(int)gpu_count];
-        vk.EnumeratePhysicalDevices(instance, &gpu_count, gpus).ThrowIfError();
+        Span<VkPhysicalDevice> gpus = stackalloc VkPhysicalDevice[(int)gpu_count];
+        api.vkEnumeratePhysicalDevices(gpus).ThrowIfError();
 
         // If a number >1 of GPUs got reported, find discrete GPU if present, or use first one available. This covers
         // most common cases (multi-gpu/integrated+dedicated graphics). Handling more complicated setups (multiple
         // dedicated GPUs) is out of scope of this sample.
         for (int i = 0; i < gpu_count; ++i)
         {
-            var device = gpus[i];
-            vk.GetPhysicalDeviceProperties(device, out var properties);
-            if (properties.DeviceType == PhysicalDeviceType.DiscreteGpu)
-                return device;
+            var gpu = gpus[i];
+            api.vkGetPhysicalDeviceProperties(gpu, out var properties);
+            if (properties.deviceType == VkPhysicalDeviceType.DiscreteGpu)
+                return gpu;
         }
 
         // Use first GPU (Integrated) is a Discrete one is not available.
@@ -79,81 +86,86 @@ unsafe class VulkanInstanceAndDevice : IDisposable
         throw new Exception("ImGui_ImplVulkanH_SelectPhysicalDevice");
     }
 
-    static uint ImGui_ImplVulkanH_SelectQueueFamilyIndex(Vk vk, PhysicalDevice physical_device)
+    static uint ImGui_ImplVulkanH_SelectQueueFamilyIndex(
+        VkInstanceApi api,
+        VkPhysicalDevice physical_device
+    )
     {
         uint count;
-        vk.GetPhysicalDeviceQueueFamilyProperties(physical_device, &count, null);
-        var queues_properties = stackalloc QueueFamilyProperties[(int)count];
-        vk.GetPhysicalDeviceQueueFamilyProperties(physical_device, &count, queues_properties);
-        for (uint i = 0; i < count; i++)
-            if (queues_properties[i].QueueFlags.HasFlag(QueueFlags.GraphicsBit))
-                return i;
+        api.vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &count, null);
+        Span<VkQueueFamilyProperties> queues_properties =
+            stackalloc VkQueueFamilyProperties[(int)count];
+        api.vkGetPhysicalDeviceQueueFamilyProperties(physical_device, queues_properties);
+        for (int i = 0; i < count; i++)
+            if (queues_properties[i].queueFlags.HasFlag(VkQueueFlags.Graphics))
+                return (uint)i;
 
         throw new Exception("graphics queue family is not found");
     }
 
-    private readonly Vk vk;
+    private readonly VkInstanceApi _vi;
+    private readonly VkDeviceApi _vd;
+    public (VkInstanceApi Instance, VkDeviceApi Device) Api => (_vi, _vd);
 
-    public readonly Instance Instance;
+    public readonly VkInstance Instance;
 
     // private readonly ExtDebugReport extDebugReport;
     // private readonly DebugReportCallbackEXT g_DebugReport;
-    private readonly ExtDebugUtils extDebugUtils;
-    private readonly DebugUtilsMessengerEXT debugMessenger;
+    // private readonly ExtDebugUtils extDebugUtils;
+    private readonly VkDebugUtilsMessengerEXT debugMessenger;
 
-    public readonly PhysicalDevice PhysicalDevice;
+    public readonly VkPhysicalDevice PhysicalDevice;
     public readonly uint QueueFamily = uint.MaxValue;
-    public readonly Queue Queue;
+    public readonly VkQueue Queue;
 
-    public readonly Device Device;
+    public readonly VkDevice Device;
 
     // Backend uses a small number of descriptors per font atlas + as many as additional calls done to ImGui_ImplVulkan_AddTexture().
     const uint IMGUI_IMPL_VULKAN_MINIMUM_SAMPLED_IMAGE_POOL_SIZE = 8; // Minimum per atlas
     public const uint IMGUI_IMPL_VULKAN_MINIMUM_SAMPLER_POOL_SIZE = 2; // Minimum for linear + nearest
-    public readonly DescriptorPool DescriptorPool;
+    public readonly VkDescriptorPool DescriptorPool;
 
     public VulkanInstanceAndDevice(
-        Vk _vk,
         ByteStringArrayAllocator instance_extensions,
         bool useDynamicRendering
     )
     {
-        vk = _vk;
         var layers = new ByteStringArrayAllocator() { "VK_LAYER_KHRONOS_validation" };
 
         // Create Vulkan Instance
         {
-            ApplicationInfo appInfo = new()
+            VkApplicationInfo appInfo = new()
             {
-                SType = StructureType.ApplicationInfo,
-                PApplicationName = (byte*)Marshal.StringToHGlobalAnsi("Hello Triangle"),
-                ApplicationVersion = new Version32(1, 0, 0),
-                PEngineName = (byte*)Marshal.StringToHGlobalAnsi("No Engine"),
-                EngineVersion = new Version32(1, 0, 0),
-                ApiVersion = Vk.Version13, // requierd for DynamicRendering
+                sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
+                pApplicationName = (byte*)Marshal.StringToHGlobalAnsi("Hello Triangle"),
+                applicationVersion = new VkVersion(1, 0, 0),
+                pEngineName = (byte*)Marshal.StringToHGlobalAnsi("No Engine"),
+                engineVersion = new VkVersion(1, 0, 0),
+                apiVersion = VK_API_VERSION_1_3, // requierd for DynamicRendering
             };
 
-            var create_info = new InstanceCreateInfo
+            var create_info = new VkInstanceCreateInfo
             {
-                SType = StructureType.InstanceCreateInfo,
-                PApplicationInfo = &appInfo,
+                sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+                pApplicationInfo = &appInfo,
             };
 
             // Enumerate available extensions
             uint properties_count;
-            vk.EnumerateInstanceExtensionProperties((byte*)null, &properties_count, null);
-            var properties = stackalloc ExtensionProperties[(int)properties_count];
-            vk.EnumerateInstanceExtensionProperties((byte*)null, &properties_count, properties)
-                .ThrowIfError();
+            vkEnumerateInstanceExtensionProperties((byte*)null, &properties_count, null);
+            Span<VkExtensionProperties> properties =
+                stackalloc VkExtensionProperties[(int)properties_count];
+            vkEnumerateInstanceExtensionProperties(properties).ThrowIfError();
 
             // Enable required extensions
             if (
                 IsExtensionAvailable(
-                    new ReadOnlySpan<ExtensionProperties>(properties, (int)properties_count),
-                    KhrGetPhysicalDeviceProperties2.ExtensionName
+                    properties,
+                    Encoding.ASCII.GetString(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME)
+                        ?? throw new Exception()
                 )
             )
-                instance_extensions.Add(KhrGetPhysicalDeviceProperties2.ExtensionName);
+                instance_extensions.Add(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
             // #ifdef VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME
             //         if (IsExtensionAvailable(properties, VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME))
             //         {
@@ -163,14 +175,15 @@ unsafe class VulkanInstanceAndDevice : IDisposable
             // #endif
 
             // Enabling validation layers
-            (create_info.EnabledLayerCount, create_info.PpEnabledLayerNames) = layers;
-            instance_extensions.Add("VK_EXT_debug_report");
-            instance_extensions.Add(ExtDebugUtils.ExtensionName);
+            (create_info.enabledLayerCount, create_info.ppEnabledLayerNames) = layers;
+            instance_extensions.Add(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
+            instance_extensions.Add(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 
             // Create Vulkan Instance
-            (create_info.EnabledExtensionCount, create_info.PpEnabledExtensionNames) =
+            (create_info.enabledExtensionCount, create_info.ppEnabledExtensionNames) =
                 instance_extensions;
-            vk.CreateInstance(&create_info, default, out Instance).ThrowIfError();
+            vkCreateInstance(&create_info, default, out Instance).ThrowIfError();
+            _vi = new VkInstanceApi(Instance);
 
 #if false
             if (!vk.TryGetInstanceExtension(Instance, out extDebugReport))
@@ -180,7 +193,7 @@ unsafe class VulkanInstanceAndDevice : IDisposable
             // Setup the debug report callback
             var debug_report_ci = new DebugReportCallbackCreateInfoEXT
             {
-                SType = StructureType.DebugReportCallbackCreateInfoExt,
+                SType = VK_STRUCTURE_TYPE_DebugReportCallbackCreateInfoExt,
                 Flags =
                     DebugReportFlagsEXT.ErrorBitExt
                     | DebugReportFlagsEXT.WarningBitExt
@@ -193,36 +206,27 @@ unsafe class VulkanInstanceAndDevice : IDisposable
                 .ThrowIfError();
 #endif
 
-            if (!vk.TryGetInstanceExtension(Instance, out extDebugUtils))
+            var createInfo = new VkDebugUtilsMessengerCreateInfoEXT
             {
-                throw new Exception("TryGetInstanceExtension<ExtDebugUtils>");
-            }
-            var createInfo = new DebugUtilsMessengerCreateInfoEXT
-            {
-                SType = StructureType.DebugUtilsMessengerCreateInfoExt,
-                MessageSeverity =
-                    DebugUtilsMessageSeverityFlagsEXT.VerboseBitExt
-                    | DebugUtilsMessageSeverityFlagsEXT.WarningBitExt
-                    | DebugUtilsMessageSeverityFlagsEXT.ErrorBitExt,
-                MessageType =
-                    DebugUtilsMessageTypeFlagsEXT.GeneralBitExt
-                    | DebugUtilsMessageTypeFlagsEXT.PerformanceBitExt
-                    | DebugUtilsMessageTypeFlagsEXT.ValidationBitExt,
-                PfnUserCallback = (DebugUtilsMessengerCallbackFunctionEXT)DebugCallback,
+                sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
+                messageSeverity =
+                    VkDebugUtilsMessageSeverityFlagsEXT.Verbose
+                    | VkDebugUtilsMessageSeverityFlagsEXT.Warning
+                    | VkDebugUtilsMessageSeverityFlagsEXT.Error,
+                messageType =
+                    VkDebugUtilsMessageTypeFlagsEXT.General
+                    | VkDebugUtilsMessageTypeFlagsEXT.Performance
+                    | VkDebugUtilsMessageTypeFlagsEXT.Validation,
+                pfnUserCallback = &DebugCallback,
             };
-            extDebugUtils.CreateDebugUtilsMessenger(
-                Instance,
-                ref createInfo,
-                default,
-                out debugMessenger
-            );
+            _vi.vkCreateDebugUtilsMessengerEXT(&createInfo, default, out debugMessenger);
         }
 
         // Select Physical Device (GPU)
-        PhysicalDevice = ImGui_ImplVulkanH_SelectPhysicalDevice(vk, Instance);
+        PhysicalDevice = ImGui_ImplVulkanH_SelectPhysicalDevice(_vi, Instance);
 
         // Select graphics queue family
-        QueueFamily = ImGui_ImplVulkanH_SelectQueueFamilyIndex(vk, PhysicalDevice);
+        QueueFamily = ImGui_ImplVulkanH_SelectQueueFamilyIndex(_vi, PhysicalDevice);
 
         // Create Logical Device (with 1 queue)
         {
@@ -230,102 +234,99 @@ unsafe class VulkanInstanceAndDevice : IDisposable
 
             // Enumerate physical device extension
             uint properties_count;
-            vk.EnumerateDeviceExtensionProperties(
+            _vi.vkEnumerateDeviceExtensionProperties(
                 PhysicalDevice,
                 (byte*)null,
                 &properties_count,
                 null
             );
-            var properties = stackalloc ExtensionProperties[(int)properties_count];
-            vk.EnumerateDeviceExtensionProperties(
-                PhysicalDevice,
-                (byte*)null,
-                &properties_count,
-                properties
-            );
+            Span<VkExtensionProperties> properties =
+                stackalloc VkExtensionProperties[(int)properties_count];
+            _vi.vkEnumerateDeviceExtensionProperties(PhysicalDevice, properties);
             // #ifdef VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME
             //         if (IsExtensionAvailable(properties, VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME))
             //             device_extensions.push_back(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME);
             // #endif
 
             var queue_priority = stackalloc float[] { 1.0f };
-            var queue_info = stackalloc DeviceQueueCreateInfo[1];
-            queue_info[0].SType = StructureType.DeviceQueueCreateInfo;
-            queue_info[0].QueueFamilyIndex = QueueFamily;
-            queue_info[0].QueueCount = 1;
-            queue_info[0].PQueuePriorities = queue_priority;
-            var create_info = new DeviceCreateInfo
+            var queue_info = stackalloc VkDeviceQueueCreateInfo[1];
+            queue_info[0].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+            queue_info[0].queueFamilyIndex = QueueFamily;
+            queue_info[0].queueCount = 1;
+            queue_info[0].pQueuePriorities = queue_priority;
+            var create_info = new VkDeviceCreateInfo
             {
-                SType = StructureType.DeviceCreateInfo,
-                QueueCreateInfoCount = 1,
-                PQueueCreateInfos = queue_info,
+                sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+                queueCreateInfoCount = 1,
+                pQueueCreateInfos = queue_info,
             };
             // (create_info.EnabledLayerCount, create_info.PpEnabledLayerNames) = layers;
-            (create_info.EnabledExtensionCount, create_info.PpEnabledExtensionNames) =
+            (create_info.enabledExtensionCount, create_info.ppEnabledExtensionNames) =
                 device_extensions;
 
             if (useDynamicRendering)
             {
-                var ext_feature = new PhysicalDeviceDynamicRenderingFeatures()
+                var ext_feature = new VkPhysicalDeviceDynamicRenderingFeatures()
                 {
-                    SType = StructureType.PhysicalDeviceDynamicRenderingFeatures,
+                    sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES,
                 };
-                var physical_features2 = new PhysicalDeviceFeatures2
+                var physical_features2 = new VkPhysicalDeviceFeatures2
                 {
-                    SType = StructureType.PhysicalDeviceFeatures2,
-                    PNext = &ext_feature,
+                    sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+                    pNext = &ext_feature,
                 };
-                _vk.GetPhysicalDeviceFeatures2(PhysicalDevice, &physical_features2);
-                if (!ext_feature.DynamicRendering)
+                _vi.vkGetPhysicalDeviceFeatures2(PhysicalDevice, &physical_features2);
+                if (!ext_feature.dynamicRendering)
                 {
                     throw new Exception();
                 }
-                create_info.PNext = &physical_features2;
+                create_info.pNext = &physical_features2;
             }
 
-            vk.CreateDevice(PhysicalDevice, &create_info, default, out Device).ThrowIfError();
-            vk.GetDeviceQueue(Device, QueueFamily, 0, out Queue);
+            _vi.vkCreateDevice(PhysicalDevice, &create_info, default, out Device).ThrowIfError();
+            _vd = new VkDeviceApi(_vi, Device);
+            _vd.vkGetDeviceQueue(QueueFamily, 0, out Queue);
         }
 
         // Create Descriptor Pool
         // If you wish to load e.g. additional textures you may need to alter pools sizes and maxSets.
         {
-            var pool_sizes = stackalloc DescriptorPoolSize[]
+            var pool_sizes = stackalloc VkDescriptorPoolSize[]
             {
-                new DescriptorPoolSize
+                new VkDescriptorPoolSize
                 {
-                    Type = DescriptorType.SampledImage,
-                    DescriptorCount = IMGUI_IMPL_VULKAN_MINIMUM_SAMPLED_IMAGE_POOL_SIZE,
+                    type = VkDescriptorType.SampledImage,
+                    descriptorCount = IMGUI_IMPL_VULKAN_MINIMUM_SAMPLED_IMAGE_POOL_SIZE,
                 },
-                new DescriptorPoolSize
+                new VkDescriptorPoolSize
                 {
-                    Type = DescriptorType.Sampler,
-                    DescriptorCount = IMGUI_IMPL_VULKAN_MINIMUM_SAMPLER_POOL_SIZE,
+                    type = VkDescriptorType.Sampler,
+                    descriptorCount = IMGUI_IMPL_VULKAN_MINIMUM_SAMPLER_POOL_SIZE,
                 },
             };
-            var pool_info = new DescriptorPoolCreateInfo
+            var pool_info = new VkDescriptorPoolCreateInfo
             {
-                SType = StructureType.DescriptorPoolCreateInfo,
-                Flags = DescriptorPoolCreateFlags.FreeDescriptorSetBit,
-                MaxSets = 0,
+                sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+                flags = VkDescriptorPoolCreateFlags.FreeDescriptorSet,
+                maxSets = 0,
             };
             for (int i = 0; i < 2; ++i)
-                pool_info.MaxSets += pool_sizes[i].DescriptorCount;
-            pool_info.PoolSizeCount = 2;
-            pool_info.PPoolSizes = pool_sizes;
-            vk.CreateDescriptorPool(Device, &pool_info, default, out DescriptorPool).ThrowIfError();
+                pool_info.maxSets += pool_sizes[i].descriptorCount;
+            pool_info.poolSizeCount = 2;
+            pool_info.pPoolSizes = pool_sizes;
+            _vd.vkCreateDescriptorPool(&pool_info, default, out DescriptorPool).ThrowIfError();
         }
     }
 
     public void Dispose()
     {
-        vk.DestroyDescriptorPool(Device, DescriptorPool, default);
+        _vd.vkDestroyDescriptorPool(DescriptorPool, default);
 
         // Remove the debug report callback
         // extDebugReport.DestroyDebugReportCallback(Instance, g_DebugReport, default);
-        extDebugUtils.DestroyDebugUtilsMessenger(Instance, debugMessenger, default);
+        _vi.vkDestroyDebugUtilsMessengerEXT(debugMessenger, default);
 
-        vk.DestroyDevice(Device, default);
-        vk.DestroyInstance(Instance, default);
+        _vd.vkDestroyDevice(default);
+        _vi.vkDestroyInstance(default);
     }
 }
