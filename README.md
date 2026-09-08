@@ -2,14 +2,23 @@
 
 `.NET10` で 3D graphics を扱う用例集。
 
-Silk.NET の `Silk.NET.Glfw` と `Silk.NET.OpenGL` や `Silk.NET.Vulkan` を使う簡単なサンプル集の予定。
-だったが、
-`Silk.NET.Glfw` + `Vortice.Vulkan` に路線変更中。
-あと、 `ImGui.NET`
+## ライブラリ選定
 
-Silk.NET と Vortice 共にいにしえの SharpDX ぽい構成であり、
-元ライブラリの C++ の例から類推して使う感じ。
-取っ掛かりになる動くコードがあると開発が捗る。
+### Glfw
+
+`Silk.NET.Glfw`
+
+### OpenGL
+
+`Silk.NET.OpenGL`
+
+### ImGui
+
+`ImGui.Net`
+
+### Vulkan
+
+`Vortice.Vulkan`
 
 ## dirs
 
@@ -34,18 +43,10 @@ https://www.glfw.org/docs/latest/quick.html
 
 ### [ImGui_Glfw_vulkan](./ImGui_Glfw_vulkan/README.md)
 
-`Silk.NET.Glfw`, `Silk.NET.Vulkan`, `ImGui.NET`
+`Silk.NET.Glfw`, `Vortice.Vulkan.Vulkan`, `ImGui.NET`
 
-- vulkan-1.3 により RenderPass の作成を回避する。
-
-window の resize による swapchain の再作成は Image の更新を引き起こして、
-Image に依存するリソースの再作成を連鎖させる。
-Image や Image サイズなどに依存する ImageView, FrameBuffer, RenderPass, Pipeline の再作成へと波及する。
-
-Dynamic Rendering を使うと FrameBuffer と RenderPass が消滅し、Pipeline の RenderPass への依存が無くなる。
-Pipeline の Image (ColorAttachment) への依存が、Create 時から BeginRendering 時へと移動する。
+- https://github.com/ocornut/imgui/tree/master/examples/example_glfw_vulkan
 
 ## slnx
 
-C# ソリューション。たぶん、無くても動くが Editor の language server の
-動きに影響がありそう。
+C# ソリューション。たぶん、無くても動くが language server の動きに影響がある様子。

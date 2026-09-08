@@ -57,3 +57,5 @@ TestResult.xml
 nunit-*.xml
 imgui.ini
 VkHelloTriangle/shaders/compiled
+
+imgui.ini
