@@ -16,7 +16,7 @@
     <Message Text="@(VertexShader) =&gt; $(Spv)" Importance="high" />
     <MakeDir Directories="$(SpvDir)" Condition="!Exists($(SpvDir))" />
     <Exec
-      Command="&quot;$(Glslc)&quot;^&#xD;&#xA;        -fshader-stage=vertex^&#xD;&#xA;        &quot;@(VertexShader)&quot;^&#xD;&#xA;        -o &quot;$(Spv)&quot;"
+      Command="&quot;$(Glslc)&quot; -fshader-stage=vertex &quot;@(VertexShader)&quot; -o &quot;$(Spv)&quot;"
     ></Exec>
     <ItemGroup>
       <EmbeddedResource Include="$(Spv)" LogicalName="%(VertexShader.FileName).vert.spv" />
@@ -35,7 +35,7 @@
     <Message Text="@(FragmentShader) =&gt; $(Spv)" Importance="high" />
     <MakeDir Directories="$(SpvDir)" Condition="!Exists($(SpvDir))" />
     <Exec
-      Command="&quot;$(Glslc)&quot;^&#xD;&#xA;        -fshader-stage=fragment^&#xD;&#xA;        &quot;@(FragmentShader)&quot;^&#xD;&#xA;        -o &quot;$(Spv)&quot;"
+      Command="&quot;$(Glslc)&quot; -fshader-stage=fragment &quot;@(FragmentShader)&quot; -o &quot;$(Spv)&quot;"
     ></Exec>
     <ItemGroup>
       <EmbeddedResource Include="$(Spv)" LogicalName="%(FragmentShader.FileName).frag.spv" />

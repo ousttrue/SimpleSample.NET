@@ -1,6 +1,12 @@
 <Project>
   <PropertyGroup>
-    <Glslc>$(VULKAN_SDK)\Bin\glslc.exe</Glslc>
     <SpvDir>$(MSBuildProjectDirectory)/shaders/compiled</SpvDir>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="$([System.OperatingSystem]::IsWindows())">
+    <Glslc>$(VULKAN_SDK)\Bin\glslc.exe</Glslc>
+  </PropertyGroup>
+  <PropertyGroup Condition="$([System.OperatingSystem]::IsLinux())">
+    <Glslc>glslc</Glslc>
   </PropertyGroup>
 </Project>

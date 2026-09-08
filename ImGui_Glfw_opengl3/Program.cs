@@ -1,6 +1,7 @@
 ﻿// https://github.com/ocornut/imgui/blob/master/examples/example_glfw_opengl3/main.cpp
 
 using System.Numerics;
+using System.Runtime.InteropServices;
 using ImGuiNET;
 using Silk.NET.GLFW;
 using Silk.NET.OpenGL;
@@ -102,10 +103,13 @@ static class Program
         //io.Fonts.AddFontFromFileTTF("../../misc/fonts/DroidSans.ttf");
         //io.Fonts.AddFontFromFileTTF("../../misc/fonts/Roboto-Medium.ttf");
         //io.Fonts.AddFontFromFileTTF("../../misc/fonts/Cousine-Regular.ttf");
-        var font = io.Fonts.AddFontFromFileTTF("c:\\Windows\\Fonts\\MSGothic.ttc", 24f);
-        if(font.NativePtr is null)
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            throw new Exception("AddFontFromFileTTF");
+            var font = io.Fonts.AddFontFromFileTTF("c:\\Windows\\Fonts\\MSGothic.ttc", 24f);
+            if (font.NativePtr is null)
+            {
+                throw new Exception("AddFontFromFileTTF");
+            }
         }
 
         // Our state

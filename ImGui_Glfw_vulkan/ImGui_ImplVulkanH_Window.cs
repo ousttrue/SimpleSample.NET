@@ -752,10 +752,10 @@ class ImGui_ImplVulkanH_Window : IDisposable
             };
 
             // TransitionImageLayout(
-            //     vk,
+            //     _vd,
             //     fd.CommandBuffer,
             //     fd.Backbuffer,
-            //     ImageLayout.ColorAttachmentOptimal
+            //     VkImageLayout.ColorAttachmentOptimal
             // );
             _vd.vkCmdBeginRendering(fd.CommandBuffer, &render_info);
         }
