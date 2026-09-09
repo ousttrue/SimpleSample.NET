@@ -21,7 +21,6 @@ unsafe class GlfwWindow : IDisposable
     {
         glfw.Init();
 
-
         glfw.WindowHint(WindowHintClientApi.ClientApi, ClientApi.NoApi);
         glfw.WindowHint(WindowHintBool.Resizable, false);
 

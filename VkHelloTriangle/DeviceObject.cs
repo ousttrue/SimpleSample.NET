@@ -67,10 +67,10 @@ public class DeviceObject : IDisposable
         (createInfo.enabledExtensionCount, createInfo.ppEnabledExtensionNames) = extensions;
 
         ByteStringArrayAllocator layers = [.. InstanceObject.ValidationLayers];
-        if (InstanceObject.EnableValidationLayers)
-        {
-            (createInfo.enabledLayerCount, createInfo.ppEnabledLayerNames) = layers;
-        }
+        // if (InstanceObject.EnableValidationLayers)
+        // {
+        //     (createInfo.enabledLayerCount, createInfo.ppEnabledLayerNames) = layers;
+        // }
 
         if (vki.vkCreateDevice(physicalDevice, &createInfo, null, out device) != VK_SUCCESS)
         {

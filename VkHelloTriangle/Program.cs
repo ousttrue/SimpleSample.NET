@@ -71,6 +71,7 @@ static class Program
             // );
             var commandBuffer = renderTarget.BeginRendering(
                 imageIndex,
+                swapchain.Images[imageIndex],
                 swapchain.Extent,
                 clearValues
             );

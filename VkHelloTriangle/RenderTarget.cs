@@ -273,6 +273,7 @@ class RenderTarget : IDisposable
 
     public unsafe VkCommandBuffer BeginRendering(
         uint imageIndex,
+        VkImage image,
         VkExtent2D extent,
         ReadOnlySpan<VkClearValue> clearValues
     )
@@ -320,12 +321,12 @@ class RenderTarget : IDisposable
             // PStencilAttachment = &depth_attachment_info,
         };
 
-        // TransitionImageLayout(
-        //     _vd,
-        //     fd.CommandBuffer,
-        //     fd.Backbuffer,
-        //     VkImageLayout.ColorAttachmentOptimal
-        // );
+        TransitionImageLayout(
+            _vkd,
+            _commandBuffer,
+            image,
+            VkImageLayout.ColorAttachmentOptimal
+        );
         _vkd.vkCmdBeginRendering(_commandBuffer, &render_info);
 
         var viewport = new VkViewport
