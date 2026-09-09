@@ -134,7 +134,6 @@ class RenderTarget : IDisposable
             }
         }
 
-
         var poolInfo = new VkCommandPoolCreateInfo
         {
             sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
@@ -213,7 +212,7 @@ class RenderTarget : IDisposable
         }
     }
 
-    public unsafe VkCommandBuffer  BeginRenderPass(
+    public unsafe VkCommandBuffer BeginRenderPass(
         uint imageIndex,
         VkExtent2D extent,
         ReadOnlySpan<VkClearValue> clearValues
@@ -292,6 +291,39 @@ class RenderTarget : IDisposable
             throw new Exception("failed to begin recording command buffer!");
         }
 
+        // TransitionImageLayout(
+        //     _vkd,
+        //     _commandBuffer,
+        //     image,
+        //     VkImageLayout.ColorAttachmentOptimal
+        // );
+        var b = new VkImageMemoryBarrier2
+        {
+            sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+            srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+            srcAccessMask = 0,
+            dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+            dstAccessMask = (VkAccessFlags2)(
+                VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+            ),
+            oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            newLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
+            image = image,
+            subresourceRange = new()
+            {
+                aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                levelCount = 1,
+                layerCount = 1,
+            },
+        };
+        var barrierDependencyInfo = new VkDependencyInfo
+        {
+            sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+            imageMemoryBarrierCount = 1,
+            pImageMemoryBarriers = &b,
+        };
+        _vkd.vkCmdPipelineBarrier2(_commandBuffer, &barrierDependencyInfo);
+
         var color_attachment_info = new VkRenderingAttachmentInfo
         {
             sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
@@ -321,12 +353,6 @@ class RenderTarget : IDisposable
             // PStencilAttachment = &depth_attachment_info,
         };
 
-        TransitionImageLayout(
-            _vkd,
-            _commandBuffer,
-            image,
-            VkImageLayout.ColorAttachmentOptimal
-        );
         _vkd.vkCmdBeginRendering(_commandBuffer, &render_info);
 
         var viewport = new VkViewport
@@ -346,10 +372,35 @@ class RenderTarget : IDisposable
         return _commandBuffer;
     }
 
-    public void EndRendering(VkImage image)
+    public unsafe void EndRendering(VkImage image)
     {
         _vkd.vkCmdEndRendering(_commandBuffer);
-        TransitionImageLayout(_vkd, _commandBuffer, image, VkImageLayout.PresentSrcKHR);
+        // TransitionImageLayout(_vkd, _commandBuffer, image, VkImageLayout.PresentSrcKHR);
+
+        var barrierPresent = new VkImageMemoryBarrier2
+        {
+            sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+            srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+            srcAccessMask = (VkAccessFlags2)VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+            dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+            dstAccessMask = 0,
+            oldLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
+            newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+            image = image,
+            subresourceRange = new()
+            {
+                aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                levelCount = 1,
+                layerCount = 1,
+            },
+        };
+        var barrierPresentDependencyInfo = new VkDependencyInfo
+        {
+            sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+            imageMemoryBarrierCount = 1,
+            pImageMemoryBarriers = &barrierPresent,
+        };
+        _vkd.vkCmdPipelineBarrier2(_commandBuffer, &barrierPresentDependencyInfo);
     }
 
     public static unsafe void TransitionImageLayout(
