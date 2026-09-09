@@ -2,22 +2,13 @@
 
 using System.Runtime.InteropServices;
 using System.Text;
-using Silk.NET.Core.Native;
-using Silk.NET.GLFW;
 using Vortice.Vulkan;
 using static Vortice.Vulkan.Vulkan;
 
-unsafe class HelloTriangleApplication
+unsafe class HelloTriangleApplication : IDisposable
 {
-    static readonly Glfw glfw;
+    private readonly GlfwWindow _window;
 
-    static HelloTriangleApplication()
-    {
-        glfw = GlfwProvider.GLFW.Value ?? throw new NullReferenceException();
-    }
-
-    const uint WIDTH = 800;
-    const uint HEIGHT = 600;
     const bool enableValidationLayers =
 #if DEBUG
         true;
@@ -36,7 +27,6 @@ unsafe class HelloTriangleApplication
         Encoding.ASCII.GetString(VK_KHR_SWAPCHAIN_EXTENSION_NAME),
     ];
 
-    private WindowHandle* window;
     private VkInstance instance;
     private VkInstanceApi instanceApi;
 
@@ -77,56 +67,14 @@ unsafe class HelloTriangleApplication
     private VkSemaphore renderFinishedSemaphore;
     private VkFence inFlightFence;
 
-    public void Run()
+    public HelloTriangleApplication()
     {
-        initWindow();
+        _window = new GlfwWindow();
         initVulkan();
         mainLoop();
-        cleanup();
     }
 
-    void initWindow()
-    {
-        glfw.Init();
-
-        glfw.WindowHint(WindowHintClientApi.ClientApi, ClientApi.NoApi);
-        glfw.WindowHint(WindowHintBool.Resizable, false);
-
-        window = glfw.CreateWindow((int)WIDTH, (int)HEIGHT, "Vulkan", null, null);
-    }
-
-    void initVulkan()
-    {
-        createInstance();
-        if (enableValidationLayers)
-        {
-            debugUtilsMessenger = new(instanceApi);
-        }
-        createSurface();
-        pickPhysicalDevice();
-        createLogicalDevice();
-        createSwapChain();
-        createImageViews();
-        createRenderPass();
-        createGraphicsPipeline();
-        createFramebuffers();
-        createCommandPool();
-        createCommandBuffer();
-        createSyncObjects();
-    }
-
-    void mainLoop()
-    {
-        while (!glfw.WindowShouldClose(window))
-        {
-            glfw.PollEvents();
-            drawFrame();
-        }
-
-        deviceApi.vkDeviceWaitIdle();
-    }
-
-    void cleanup()
+    public void Dispose()
     {
         deviceApi.vkDestroySemaphore(renderFinishedSemaphore, null);
         deviceApi.vkDestroySemaphore(imageAvailableSemaphore, null);
@@ -161,9 +109,41 @@ unsafe class HelloTriangleApplication
 
         vkShutdown();
 
-        glfw.DestroyWindow(window);
+        _window.Dispose();
+    }
 
-        glfw.Terminate();
+    void initVulkan()
+    {
+        createInstance(_window.GetVkExtensions());
+        if (enableValidationLayers)
+        {
+            debugUtilsMessenger = new(instanceApi);
+        }
+        surface = new(_window.CreateVkSurface(instance.Handle));
+        pickPhysicalDevice();
+        createLogicalDevice();
+        createSwapChain();
+        createImageViews();
+        createRenderPass();
+        createGraphicsPipeline();
+        createFramebuffers();
+        createCommandPool();
+        createCommandBuffer();
+        createSyncObjects();
+    }
+
+    void mainLoop()
+    {
+        while (true)
+        {
+            if (!_window.NextFrame())
+            {
+                break;
+            }
+            drawFrame();
+        }
+
+        deviceApi.vkDeviceWaitIdle();
     }
 
     static void StrCopy(Span<byte> dst, ReadOnlySpan<byte> src)
@@ -171,7 +151,7 @@ unsafe class HelloTriangleApplication
         src.CopyTo(dst);
     }
 
-    void createInstance()
+    void createInstance(ReadOnlySpan<IntPtr> glfw_extensions)
     {
         vkInitialize();
         if (enableValidationLayers && !checkValidationLayerSupport())
@@ -179,10 +159,8 @@ unsafe class HelloTriangleApplication
             throw new Exception("validation layers requested, but not available!");
         }
 
-        var glfwExtensions = glfw.GetRequiredInstanceExtensions(out var glfwExtensionCount);
-
         using var extensions = new ByteStringArrayAllocator();
-        extensions.AddSpan(glfwExtensions, glfwExtensionCount);
+        extensions.AddSpan(glfw_extensions);
         if (enableValidationLayers)
         {
             extensions.Add(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
@@ -218,20 +196,6 @@ unsafe class HelloTriangleApplication
             throw new Exception("failed to create instance!");
         }
         instanceApi = new VkInstanceApi(instance);
-    }
-
-    void createSurface()
-    {
-        VkNonDispatchableHandle _surface;
-        if (
-            (VkResult)
-                glfw.CreateWindowSurface(new VkHandle(instance.Handle), window, null, &_surface)
-            != VK_SUCCESS
-        )
-        {
-            throw new Exception("failed to create window surface!");
-        }
-        surface = new(_surface.Handle);
     }
 
     void pickPhysicalDevice()
@@ -324,7 +288,14 @@ unsafe class HelloTriangleApplication
 
         var surfaceFormat = chooseSwapSurfaceFormat(swapChainSupport.formats);
         var presentMode = chooseSwapPresentMode(swapChainSupport.presentModes);
-        var extent = chooseSwapExtent(swapChainSupport.capabilities);
+
+        var extent =
+            (swapChainSupport.capabilities.currentExtent.width != uint.MaxValue)
+                ? swapChainSupport.capabilities.currentExtent
+                : _window.GetExtent(
+                    swapChainSupport.capabilities.minImageExtent,
+                    swapChainSupport.capabilities.maxImageExtent
+                );
 
         var imageCount = swapChainSupport.capabilities.minImageCount + 1;
         if (
@@ -887,33 +858,6 @@ unsafe class HelloTriangleApplication
         return VkPresentModeKHR.Fifo;
     }
 
-    VkExtent2D chooseSwapExtent(VkSurfaceCapabilitiesKHR capabilities)
-    {
-        if (capabilities.currentExtent.width != uint.MaxValue)
-        {
-            return capabilities.currentExtent;
-        }
-        else
-        {
-            glfw.GetFramebufferSize(window, out var width, out var height);
-
-            var actualExtent = new VkExtent2D((uint)width, (uint)height);
-
-            actualExtent.width = Math.Clamp(
-                actualExtent.width,
-                capabilities.minImageExtent.width,
-                capabilities.maxImageExtent.width
-            );
-            actualExtent.height = Math.Clamp(
-                actualExtent.height,
-                capabilities.minImageExtent.height,
-                capabilities.maxImageExtent.height
-            );
-
-            return actualExtent;
-        }
-    }
-
     bool isDeviceSuitable(VkPhysicalDevice physicalDevice)
     {
         var indices = QueueFamilyIndices.findQueueFamilies(instanceApi, physicalDevice, surface);
@@ -999,6 +943,6 @@ static class Program
 {
     public static void Main()
     {
-        new HelloTriangleApplication().Run();
+        using var app = new HelloTriangleApplication();
     }
 }
