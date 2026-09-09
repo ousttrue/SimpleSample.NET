@@ -54,7 +54,7 @@ unsafe class GlfwWindow : IDisposable
         return _surface.Handle;
     }
 
-    public VkExtent2D GetExtent(VkExtent2D minImageExtent, VkExtent2D maxImageExtent)
+    public VkExtent2D GetExtent()
     {
         glfw.GetFramebufferSize(_window, out var width, out var height);
         return new VkExtent2D((uint)width, (uint)height);

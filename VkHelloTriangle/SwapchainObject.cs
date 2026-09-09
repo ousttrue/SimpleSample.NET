@@ -1,6 +1,5 @@
 // https://github.com/Overv/VulkanTutorial/blob/main/code/15_hello_triangle.cpp
 
-using Silk.NET.GLFW;
 using Vortice.Vulkan;
 using static Vortice.Vulkan.Vulkan;
 
@@ -40,23 +39,13 @@ class SwapchainObject : IDisposable
     }
 
     private readonly VkDeviceApi _vkd;
-    public readonly VkSwapchainKHR SwapChain;
-    private readonly VkFormat ImageFormat;
+    private readonly VkSwapchainKHR _swapChain;
+    public readonly VkFormat Format;
     public readonly VkExtent2D Extent;
-    public readonly VkRenderPass RenderPass;
-
-    private VkSemaphore imageAvailableSemaphore;
-    private VkFence inFlightFence;
-    public readonly VkQueue GraphicsQueue;
-    public readonly VkQueue PresentQueue;
-
-    private readonly VkImage[] _images;
-    private readonly VkImageView[] _imageViews;
-    public readonly VkFramebuffer[] _framebuffers;
-
-    private VkCommandPool commandPool;
-    private VkCommandBuffer commandBuffer;
-    private VkSemaphore renderFinishedSemaphore;
+    public readonly VkImage[] Images;
+    private VkSemaphore _imageAvailableSemaphore;
+    private VkFence _inFlightFence;
+    private readonly VkQueue _presentQueue;
 
     public unsafe SwapchainObject(
         VkInstanceApi vki,
@@ -89,9 +78,7 @@ class SwapchainObject : IDisposable
         }
         var indices = QueueFamilyIndices.findQueueFamilies(vki, physicalDevice, surface);
 
-        vkd.vkGetDeviceQueue(indices.GraphicsFamily, 0, out GraphicsQueue);
-
-        vkd.vkGetDeviceQueue(indices.PresentFamily, 0, out PresentQueue);
+        vkd.vkGetDeviceQueue(indices.PresentFamily, 0, out _presentQueue);
 
         {
             var createInfo = new VkSwapchainCreateInfoKHR
@@ -128,279 +115,68 @@ class SwapchainObject : IDisposable
                 createInfo.imageSharingMode = VkSharingMode.Exclusive;
             }
 
-            if (vkd.vkCreateSwapchainKHR(&createInfo, null, out SwapChain) != VK_SUCCESS)
+            if (vkd.vkCreateSwapchainKHR(&createInfo, null, out _swapChain) != VK_SUCCESS)
             {
                 throw new Exception("failed to create swap chain!");
             }
         }
 
-        ImageFormat = surfaceFormat.format;
+        Format = surfaceFormat.format;
         Extent = extent;
 
-        vkd.vkGetSwapchainImagesKHR(SwapChain, out imageCount);
+        vkd.vkGetSwapchainImagesKHR(_swapChain, out imageCount);
         Span<VkImage> swapchainImages = stackalloc VkImage[(int)imageCount];
-        vkd.vkGetSwapchainImagesKHR(SwapChain, swapchainImages);
-        _images = swapchainImages.ToArray();
-
-        {
-            _imageViews = new VkImageView[_images.Length];
-            for (int i = 0; i < _images.Length; ++i)
-            {
-                var createInfo = new VkImageViewCreateInfo
-                {
-                    sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-                    image = _images[i],
-                    viewType = VkImageViewType.Image2D,
-                    format = ImageFormat,
-                };
-                createInfo.components.r = VkComponentSwizzle.Identity;
-                createInfo.components.g = VkComponentSwizzle.Identity;
-                createInfo.components.b = VkComponentSwizzle.Identity;
-                createInfo.components.a = VkComponentSwizzle.Identity;
-                createInfo.subresourceRange.aspectMask = VkImageAspectFlags.Color;
-                createInfo.subresourceRange.baseMipLevel = 0;
-                createInfo.subresourceRange.levelCount = 1;
-                createInfo.subresourceRange.baseArrayLayer = 0;
-                createInfo.subresourceRange.layerCount = 1;
-
-                if (_vkd.vkCreateImageView(&createInfo, null, out _imageViews[i]) != VK_SUCCESS)
-                {
-                    throw new Exception("failed to create image views!");
-                }
-            }
-        }
-        {
-            var colorAttachment = new VkAttachmentDescription
-            {
-                format = ImageFormat,
-                samples = VkSampleCountFlags.Count1,
-                loadOp = VkAttachmentLoadOp.Clear,
-                storeOp = VkAttachmentStoreOp.Store,
-                stencilLoadOp = VkAttachmentLoadOp.DontCare,
-                stencilStoreOp = VkAttachmentStoreOp.DontCare,
-                initialLayout = VkImageLayout.Undefined,
-                finalLayout = VkImageLayout.PresentSrcKHR,
-            };
-
-            var colorAttachmentRef = new VkAttachmentReference
-            {
-                attachment = 0,
-                layout = VkImageLayout.ColorAttachmentOptimal,
-            };
-
-            var subpass = new VkSubpassDescription
-            {
-                pipelineBindPoint = VkPipelineBindPoint.Graphics,
-                colorAttachmentCount = 1,
-                pColorAttachments = &colorAttachmentRef,
-            };
-
-            var dependency = new VkSubpassDependency
-            {
-                srcSubpass = VK_SUBPASS_EXTERNAL,
-                dstSubpass = 0,
-                srcStageMask = VkPipelineStageFlags.ColorAttachmentOutput,
-                srcAccessMask = 0,
-                dstStageMask = VkPipelineStageFlags.ColorAttachmentOutput,
-                dstAccessMask = VkAccessFlags.ColorAttachmentWrite,
-            };
-
-            var renderPassInfo = new VkRenderPassCreateInfo
-            {
-                sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-                attachmentCount = 1,
-                pAttachments = &colorAttachment,
-                subpassCount = 1,
-                pSubpasses = &subpass,
-                dependencyCount = 1,
-                pDependencies = &dependency,
-            };
-
-            if (_vkd.vkCreateRenderPass(&renderPassInfo, null, out RenderPass) != VK_SUCCESS)
-            {
-                throw new Exception("failed to create render pass!");
-            }
-        }
-        {
-            _framebuffers = new VkFramebuffer[_imageViews.Length];
-
-            for (int i = 0; i < _imageViews.Length; i++)
-            {
-                var attachment = _imageViews[i];
-
-                var framebufferInfo = new VkFramebufferCreateInfo
-                {
-                    sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-                    renderPass = RenderPass,
-                    attachmentCount = 1,
-                    pAttachments = &attachment,
-                    width = Extent.width,
-                    height = Extent.height,
-                    layers = 1,
-                };
-
-                if (
-                    _vkd.vkCreateFramebuffer(&framebufferInfo, null, out _framebuffers[i])
-                    != VK_SUCCESS
-                )
-                {
-                    throw new Exception("failed to create framebuffer!");
-                }
-            }
-        }
+        vkd.vkGetSwapchainImagesKHR(_swapChain, swapchainImages);
+        Images = swapchainImages.ToArray();
 
         var semaphoreInfo = new VkSemaphoreCreateInfo
         {
             sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
         };
-
         var fenceInfo = new VkFenceCreateInfo
         {
             sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
             flags = VkFenceCreateFlags.Signaled,
         };
-
         if (
-            vkd.vkCreateSemaphore(&semaphoreInfo, null, out imageAvailableSemaphore) != VK_SUCCESS
-            || vkd.vkCreateSemaphore(&semaphoreInfo, null, out renderFinishedSemaphore)
-                != VK_SUCCESS
-            || vkd.vkCreateFence(&fenceInfo, null, out inFlightFence) != VK_SUCCESS
+            vkd.vkCreateSemaphore(&semaphoreInfo, null, out _imageAvailableSemaphore) != VK_SUCCESS
+            || vkd.vkCreateFence(&fenceInfo, null, out _inFlightFence) != VK_SUCCESS
         )
         {
             throw new Exception("failed to create synchronization objects for a frame!");
         }
-
-        var poolInfo = new VkCommandPoolCreateInfo
-        {
-            sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-            flags = VkCommandPoolCreateFlags.ResetCommandBuffer,
-            queueFamilyIndex = indices.GraphicsFamily,
-        };
-
-        if (_vkd.vkCreateCommandPool(&poolInfo, null, out commandPool) != VK_SUCCESS)
-        {
-            throw new Exception("failed to create command pool!");
-        }
-
-        var allocInfo = new VkCommandBufferAllocateInfo
-        {
-            sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-            commandPool = commandPool,
-            level = VkCommandBufferLevel.Primary,
-            commandBufferCount = 1,
-        };
-
-        VkCommandBuffer _commandBuffer;
-        if (_vkd.vkAllocateCommandBuffers(&allocInfo, &_commandBuffer) != VK_SUCCESS)
-        {
-            throw new Exception("failed to allocate command buffers!");
-        }
-        commandBuffer = _commandBuffer;
     }
 
     public unsafe void Dispose()
     {
-        _vkd.vkDestroySemaphore(renderFinishedSemaphore, null);
-        _vkd.vkDestroySemaphore(imageAvailableSemaphore, null);
-        _vkd.vkDestroyFence(inFlightFence, null);
-        _vkd.vkDestroyCommandPool(commandPool, null);
-
-        foreach (var framebuffer in _framebuffers)
-        {
-            _vkd.vkDestroyFramebuffer(framebuffer, null);
-        }
-        foreach (var imageView in _imageViews)
-        {
-            _vkd.vkDestroyImageView(imageView, null);
-        }
-        _vkd.vkDestroyRenderPass(RenderPass, null);
-        _vkd.vkDestroySwapchainKHR(SwapChain, null);
+        _vkd.vkDestroySemaphore(_imageAvailableSemaphore, null);
+        _vkd.vkDestroyFence(_inFlightFence, null);
+        _vkd.vkDestroySwapchainKHR(_swapChain, null);
     }
 
-    public unsafe (uint, VkCommandBuffer) Acquire()
+    public unsafe (uint, VkSemaphore, VkFence) Acquire()
     {
         _vkd.vkDeviceWaitIdle();
 
-        var _inFlightFence = inFlightFence;
+        var _inFlightFence = this._inFlightFence;
         _vkd.vkWaitForFences(1, &_inFlightFence, true, ulong.MaxValue);
         _vkd.vkResetFences(1, &_inFlightFence);
 
         _vkd.vkAcquireNextImageKHR(
-            SwapChain,
+            _swapChain,
             ulong.MaxValue,
-            imageAvailableSemaphore,
+            _imageAvailableSemaphore,
             default,
             out var imageIndex
         );
 
-        _vkd.vkResetCommandBuffer(
-            commandBuffer, /*VkCommandBufferResetFlagBits*/
-            0
-        );
-
-        var beginInfo = new VkCommandBufferBeginInfo
-        {
-            sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-        };
-        if (_vkd.vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS)
-        {
-            throw new Exception("failed to begin recording command buffer!");
-        }
-
-        var renderPassInfo = new VkRenderPassBeginInfo
-        {
-            sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-            renderPass = RenderPass,
-            framebuffer = _framebuffers[imageIndex],
-        };
-        renderPassInfo.renderArea.offset = new(0, 0);
-        renderPassInfo.renderArea.extent = Extent;
-
-        var clearColor = new VkClearValue { };
-        clearColor.color.float32[0] = 0.0f;
-        clearColor.color.float32[1] = 0.0f;
-        clearColor.color.float32[2] = 0.0f;
-        clearColor.color.float32[2] = 1.0f;
-        renderPassInfo.clearValueCount = 1;
-        renderPassInfo.pClearValues = &clearColor;
-
-        _vkd.vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VkSubpassContents.Inline);
-
-        return (imageIndex, commandBuffer);
+        return (imageIndex, _imageAvailableSemaphore, _inFlightFence);
     }
 
-    public unsafe void Present(uint imageIndex)
+    public unsafe void Present(uint imageIndex, VkSemaphore renderFinishedSemaphore)
     {
-        _vkd.vkCmdEndRenderPass(commandBuffer);
-        if (_vkd.vkEndCommandBuffer(commandBuffer) != VK_SUCCESS)
-        {
-            throw new Exception("failed to record command buffer!");
-        }
-
-        var waitSemaphores = stackalloc VkSemaphore[] { imageAvailableSemaphore };
-        var waitStages = stackalloc VkPipelineStageFlags[]
-        {
-            VkPipelineStageFlags.ColorAttachmentOutput,
-        };
+        var swapChains = stackalloc VkSwapchainKHR[] { _swapChain };
         var signalSemaphores = stackalloc VkSemaphore[] { renderFinishedSemaphore };
-        var cmd = commandBuffer;
-        var submitInfo = new VkSubmitInfo
-        {
-            sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-            waitSemaphoreCount = 1,
-            pWaitSemaphores = waitSemaphores,
-            pWaitDstStageMask = waitStages,
-            commandBufferCount = 1,
-            pCommandBuffers = &cmd,
-            signalSemaphoreCount = 1,
-            pSignalSemaphores = signalSemaphores,
-        };
-        if (_vkd.vkQueueSubmit(GraphicsQueue, 1, &submitInfo, inFlightFence) != VK_SUCCESS)
-        {
-            throw new Exception("failed to submit draw command buffer!");
-        }
-
-        var swapChains = stackalloc VkSwapchainKHR[] { SwapChain };
         var presentInfo = new VkPresentInfoKHR
         {
             sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
@@ -411,6 +187,6 @@ class SwapchainObject : IDisposable
             pImageIndices = &imageIndex,
         };
 
-        _vkd.vkQueuePresentKHR(PresentQueue, &presentInfo);
+        _vkd.vkQueuePresentKHR(_presentQueue, &presentInfo);
     }
 }

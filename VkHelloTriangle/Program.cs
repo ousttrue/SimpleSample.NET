@@ -9,10 +9,8 @@ static class Program
     public static unsafe void Main()
     {
         using var window = new GlfwWindow();
-
         using var instance = new InstanceObject(window);
         var physicalDevice = instance.pickPhysicalDevice(DeviceObject.DeviceExtensions);
-
         var deviceProperties = new VkPhysicalDeviceProperties2
         {
             sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
@@ -33,14 +31,22 @@ static class Program
             indices.GraphicsFamily,
             indices.PresentFamily
         );
+
         using var swapchain = new SwapchainObject(
             instance.Api,
             physicalDevice,
             instance.Surface,
             device.Api,
-            new()
+            window.GetExtent()
         );
-        using var pipeline = new PipelineObject(device.Api, swapchain.RenderPass);
+        using var renderTarget = new RenderTarget(
+            device.Api,
+            indices.GraphicsFamily,
+            swapchain.Format,
+            swapchain.Extent,
+            swapchain.Images
+        );
+        using var pipeline = new PipelineObject(device.Api, renderTarget.RenderPass);
 
         while (true)
         {
@@ -48,9 +54,13 @@ static class Program
             {
                 break;
             }
-            var (imageIndex, commandBuffer) = swapchain.Acquire();
-            pipeline.RecordCommandBuffer(commandBuffer, swapchain.Extent);
-            swapchain.Present(imageIndex);
+            var (imageIndex, imageAvailableSemaphore, inFlightFence) = swapchain.Acquire();
+            var (commandBuffer, renderFinishedSemaphore) = renderTarget.BeginRenderPass(imageIndex);
+            {
+                pipeline.RecordCommandBuffer(commandBuffer, renderTarget.Extent);
+            }
+            renderTarget.EndRenderPass(imageAvailableSemaphore, inFlightFence);
+            swapchain.Present(imageIndex, renderFinishedSemaphore);
         }
 
         device.Api.vkDeviceWaitIdle();
