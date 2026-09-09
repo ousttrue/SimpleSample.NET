@@ -1,109 +1,11 @@
 ﻿// https://github.com/Overv/VulkanTutorial/blob/main/code/15_hello_triangle.cpp
 
-using System.Collections;
 using System.Runtime.InteropServices;
 using System.Text;
 using Silk.NET.Core.Native;
 using Silk.NET.GLFW;
 using Vortice.Vulkan;
 using static Vortice.Vulkan.Vulkan;
-
-public unsafe class ByteStringArrayAllocator : IDisposable, IEnumerable
-{
-    List<string> _list = [];
-    byte** _array;
-
-    public IEnumerator GetEnumerator()
-    {
-        return _list.GetEnumerator();
-    }
-
-    public void Deconstruct(out uint x, out byte** y)
-    {
-        Dispose();
-
-        _array = (byte**)Marshal.AllocHGlobal(sizeof(byte*) * _list.Count);
-        for (int i = 0; i < _list.Count; ++i)
-        {
-            _array[i] = (byte*)Marshal.StringToHGlobalAnsi(_list[i]);
-        }
-        x = (uint)_list.Count;
-        y = _array;
-    }
-
-    public void Dispose()
-    {
-        if (_array != null)
-        {
-            for (int i = 0; i < _list.Count; ++i)
-            {
-                Marshal.FreeHGlobal((nint)_array[i]);
-            }
-            Marshal.FreeHGlobal((nint)_array);
-        }
-    }
-
-    public void Add(string p)
-    {
-        _list.Add(p);
-    }
-
-    public void Add(nint p)
-    {
-        _list.Add(Marshal.PtrToStringAnsi(p) ?? throw new Exception());
-    }
-
-    public void Add(ReadOnlySpan<byte> p)
-    {
-        Add(Encoding.UTF8.GetString(p));
-    }
-
-    public void AddSpan(ReadOnlySpan<IntPtr> pp)
-    {
-        foreach (var p in pp)
-        {
-            Add(p);
-        }
-    }
-
-    public void AddSpan(byte** _pp, uint count)
-    {
-        var pp = (IntPtr*)_pp;
-        AddSpan(new ReadOnlySpan<nint>(pp, (int)count));
-    }
-}
-
-struct QueueFamilyIndices
-{
-    public uint? graphicsFamily;
-    public uint? presentFamily;
-
-    public bool isComplete()
-    {
-        return graphicsFamily is not null && presentFamily is not null;
-    }
-
-    public HashSet<uint> ToUniqueSet()
-    {
-        var set = new HashSet<uint>();
-        if (graphicsFamily is uint g)
-        {
-            set.Add(g);
-        }
-        if (presentFamily is uint p)
-        {
-            set.Add(p);
-        }
-        return set;
-    }
-}
-
-struct SwapChainSupportDetails
-{
-    public VkSurfaceCapabilitiesKHR capabilities;
-    public VkSurfaceFormatKHR[] formats;
-    public VkPresentModeKHR[] presentModes;
-};
 
 unsafe class HelloTriangleApplication
 {
@@ -198,26 +100,10 @@ unsafe class HelloTriangleApplication
     void initVulkan()
     {
         createInstance();
-
-        // get api
-        // if (!vk.TryGetInstanceExtension(instance, out khrSurface))
-        // {
-        //     throw new Exception("TryGetInstanceExtension");
-        // }
-        // if (!vk.TryGetInstanceExtension(instance, out extDebugUtils))
-        // {
-        //     throw new Exception("TryGetInstanceExtension");
-        // }
-
         setupDebugMessenger();
         createSurface();
         pickPhysicalDevice();
         createLogicalDevice();
-        // if (!vk.TryGetDeviceExtension(instance, device, out khrSwapchain))
-        // {
-        //     throw new Exception("TryGetDeviceExtension");
-        // }
-
         createSwapChain();
         createImageViews();
         createRenderPass();
@@ -292,51 +178,47 @@ unsafe class HelloTriangleApplication
             throw new Exception("validation layers requested, but not available!");
         }
 
-        fixed (byte* appName = "Hello Triangle"u8)
-        fixed (byte* engineName = "No Engine"u8)
+        var glfwExtensions = glfw.GetRequiredInstanceExtensions(out var glfwExtensionCount);
+
+        using var extensions = new ByteStringArrayAllocator();
+        extensions.AddSpan(glfwExtensions, glfwExtensionCount);
+        if (enableValidationLayers)
         {
-            var glfwExtensions = glfw.GetRequiredInstanceExtensions(out var glfwExtensionCount);
-
-            using var extensions = new ByteStringArrayAllocator();
-            extensions.AddSpan(glfwExtensions, glfwExtensionCount);
-            if (enableValidationLayers)
-            {
-                extensions.Add(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-            }
-
-            var appInfo = new VkApplicationInfo
-            {
-                sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
-                pApplicationName = appName,
-                // applicationVersion = Vk.MakeVersion(1, 0, 0),
-                pEngineName = engineName,
-                // engineVersion = Vk.MakeVersion(1, 0, 0),
-                apiVersion = VK_API_VERSION_1_0,
-            };
-            var createInfo = new VkInstanceCreateInfo
-            {
-                sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-                pApplicationInfo = &appInfo,
-                enabledLayerCount = 0,
-                pNext = null,
-            };
-            (createInfo.enabledExtensionCount, createInfo.ppEnabledExtensionNames) = extensions;
-
-            VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo = default;
-            ByteStringArrayAllocator layers = [.. validationLayers];
-            if (enableValidationLayers)
-            {
-                (createInfo.enabledLayerCount, createInfo.ppEnabledLayerNames) = layers;
-
-                populateDebugMessengerCreateInfo(out debugCreateInfo);
-                createInfo.pNext = &debugCreateInfo;
-            }
-            if (vkCreateInstance(&createInfo, null, out instance) != VK_SUCCESS)
-            {
-                throw new Exception("failed to create instance!");
-            }
-            instanceApi = new VkInstanceApi(instance);
+            extensions.Add(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
         }
+
+        var appInfo = new VkApplicationInfo
+        {
+            sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
+            pApplicationName = new VkUtf8ReadOnlyString("Hello Triangle"u8),
+            applicationVersion = new VkVersion(1, 0, 0),
+            pEngineName = new VkUtf8ReadOnlyString("No Engine"u8),
+            engineVersion = new VkVersion(1, 0, 0),
+            apiVersion = VK_API_VERSION_1_0,
+        };
+        var createInfo = new VkInstanceCreateInfo
+        {
+            sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+            pApplicationInfo = &appInfo,
+            enabledLayerCount = 0,
+            pNext = null,
+        };
+        (createInfo.enabledExtensionCount, createInfo.ppEnabledExtensionNames) = extensions;
+
+        VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo = default;
+        ByteStringArrayAllocator layers = [.. validationLayers];
+        if (enableValidationLayers)
+        {
+            (createInfo.enabledLayerCount, createInfo.ppEnabledLayerNames) = layers;
+
+            populateDebugMessengerCreateInfo(out debugCreateInfo);
+            createInfo.pNext = &debugCreateInfo;
+        }
+        if (vkCreateInstance(&createInfo, null, out instance) != VK_SUCCESS)
+        {
+            throw new Exception("failed to create instance!");
+        }
+        instanceApi = new VkInstanceApi(instance);
     }
 
     void populateDebugMessengerCreateInfo(out VkDebugUtilsMessengerCreateInfoEXT createInfo)
@@ -417,9 +299,13 @@ unsafe class HelloTriangleApplication
 
     void createLogicalDevice()
     {
-        var indices = findQueueFamilies(physicalDevice);
+        var indices = QueueFamilyIndices.findQueueFamilies(instanceApi, physicalDevice, surface);
 
-        var uniqueQueueFamilies = indices.ToUniqueSet();
+        var uniqueQueueFamilies = new HashSet<uint>()
+        {
+            indices.GraphicsFamily,
+            indices.PresentFamily,
+        };
         var queueCreateInfos = stackalloc VkDeviceQueueCreateInfo[2];
         float queuePriority = 1.0f;
 
@@ -458,21 +344,17 @@ unsafe class HelloTriangleApplication
         }
         deviceApi = new VkDeviceApi(instanceApi, device);
 
-        deviceApi.vkGetDeviceQueue(
-            indices.graphicsFamily ?? throw new Exception(),
-            0,
-            out graphicsQueue
-        );
-        deviceApi.vkGetDeviceQueue(
-            indices.presentFamily ?? throw new Exception(),
-            0,
-            out presentQueue
-        );
+        deviceApi.vkGetDeviceQueue(indices.GraphicsFamily, 0, out graphicsQueue);
+        deviceApi.vkGetDeviceQueue(indices.PresentFamily, 0, out presentQueue);
     }
 
     void createSwapChain()
     {
-        var swapChainSupport = querySwapChainSupport(physicalDevice);
+        var swapChainSupport = SwapChainSupportDetails.querySwapChainSupport(
+            instanceApi,
+            physicalDevice,
+            surface
+        );
 
         var surfaceFormat = chooseSwapSurfaceFormat(swapChainSupport.formats);
         var presentMode = chooseSwapPresentMode(swapChainSupport.presentModes);
@@ -499,14 +381,14 @@ unsafe class HelloTriangleApplication
             imageUsage = VkImageUsageFlags.ColorAttachment,
         };
 
-        var indices = findQueueFamilies(physicalDevice);
+        var indices = QueueFamilyIndices.findQueueFamilies(instanceApi, physicalDevice, surface);
         var queueFamilyIndices = stackalloc uint[]
         {
-            indices.graphicsFamily ?? throw new Exception(),
-            indices.presentFamily ?? throw new Exception(),
+            indices.GraphicsFamily,
+            indices.PresentFamily,
         };
 
-        if (indices.graphicsFamily != indices.presentFamily)
+        if (indices.GraphicsFamily != indices.PresentFamily)
         {
             createInfo.imageSharingMode = VkSharingMode.Concurrent;
             createInfo.queueFamilyIndexCount = 2;
@@ -812,13 +694,17 @@ unsafe class HelloTriangleApplication
 
     void createCommandPool()
     {
-        var queueFamilyIndices = findQueueFamilies(physicalDevice);
+        var queueFamilyIndices = QueueFamilyIndices.findQueueFamilies(
+            instanceApi,
+            physicalDevice,
+            surface
+        );
 
         var poolInfo = new VkCommandPoolCreateInfo
         {
             sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
             flags = VkCommandPoolCreateFlags.ResetCommandBuffer,
-            queueFamilyIndex = queueFamilyIndices.graphicsFamily ?? throw new Exception(),
+            queueFamilyIndex = queueFamilyIndices.GraphicsFamily,
         };
 
         if (deviceApi.vkCreateCommandPool(&poolInfo, null, out commandPool) != VK_SUCCESS)
@@ -1062,86 +948,25 @@ unsafe class HelloTriangleApplication
         }
     }
 
-    SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice physicalDevice)
-    {
-        SwapChainSupportDetails details = default;
-        instanceApi.vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
-            physicalDevice,
-            surface,
-            &details.capabilities
-        );
-
-        uint formatCount;
-        instanceApi.vkGetPhysicalDeviceSurfaceFormatsKHR(
-            physicalDevice,
-            surface,
-            &formatCount,
-            null
-        );
-
-        if (formatCount != 0)
-        {
-            // details.formats.resize(formatCount);
-            details.formats = new VkSurfaceFormatKHR[(int)formatCount];
-            fixed (VkSurfaceFormatKHR* formats = details.formats)
-            {
-                instanceApi.vkGetPhysicalDeviceSurfaceFormatsKHR(
-                    physicalDevice,
-                    surface,
-                    &formatCount,
-                    formats
-                );
-            }
-        }
-        else
-        {
-            details.formats = [];
-        }
-
-        uint presentModeCount;
-        instanceApi.vkGetPhysicalDeviceSurfacePresentModesKHR(
-            physicalDevice,
-            surface,
-            &presentModeCount,
-            null
-        );
-
-        if (presentModeCount != 0)
-        {
-            details.presentModes = new VkPresentModeKHR[(int)presentModeCount];
-            fixed (VkPresentModeKHR* presentModes = details.presentModes)
-            {
-                instanceApi.vkGetPhysicalDeviceSurfacePresentModesKHR(
-                    physicalDevice,
-                    surface,
-                    &presentModeCount,
-                    presentModes
-                );
-            }
-        }
-        else
-        {
-            details.presentModes = [];
-        }
-
-        return details;
-    }
-
     bool isDeviceSuitable(VkPhysicalDevice physicalDevice)
     {
-        var indices = findQueueFamilies(physicalDevice);
+        var indices = QueueFamilyIndices.findQueueFamilies(instanceApi, physicalDevice, surface);
 
         bool extensionsSupported = checkDeviceExtensionSupport(physicalDevice);
 
         bool swapChainAdequate = false;
         if (extensionsSupported)
         {
-            var swapChainSupport = querySwapChainSupport(physicalDevice);
+            var swapChainSupport = SwapChainSupportDetails.querySwapChainSupport(
+                instanceApi,
+                physicalDevice,
+                surface
+            );
             swapChainAdequate =
                 swapChainSupport.formats.Length > 0 && swapChainSupport.presentModes.Length > 0;
         }
 
-        return indices.isComplete() && extensionsSupported && swapChainAdequate;
+        return extensionsSupported && swapChainAdequate;
     }
 
     bool checkDeviceExtensionSupport(VkPhysicalDevice physicalDevice)
@@ -1172,57 +997,6 @@ unsafe class HelloTriangleApplication
         }
 
         return requiredExtensions.Count == 0;
-    }
-
-    QueueFamilyIndices findQueueFamilies(VkPhysicalDevice physicalDevice)
-    {
-        QueueFamilyIndices indices = default;
-
-        uint queueFamilyCount = 0;
-        instanceApi.vkGetPhysicalDeviceQueueFamilyProperties(
-            physicalDevice,
-            &queueFamilyCount,
-            null
-        );
-
-        var queueFamilies = stackalloc VkQueueFamilyProperties[(int)queueFamilyCount];
-        instanceApi.vkGetPhysicalDeviceQueueFamilyProperties(
-            physicalDevice,
-            &queueFamilyCount,
-            queueFamilies
-        );
-
-        uint i = 0;
-        for (int j = 0; j < queueFamilyCount; ++j)
-        {
-            var queueFamily = queueFamilies[j];
-            if (queueFamily.queueFlags.HasFlag(VkQueueFlags.Graphics))
-            {
-                indices.graphicsFamily = i;
-            }
-
-            VkBool32 presentSupport = false;
-            instanceApi.vkGetPhysicalDeviceSurfaceSupportKHR(
-                physicalDevice,
-                i,
-                surface,
-                &presentSupport
-            );
-
-            if (presentSupport)
-            {
-                indices.presentFamily = i;
-            }
-
-            if (indices.isComplete())
-            {
-                break;
-            }
-
-            i++;
-        }
-
-        return indices;
     }
 
     bool checkValidationLayerSupport()
