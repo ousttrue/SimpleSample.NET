@@ -719,6 +719,33 @@ class ImGui_ImplVulkanH_Window : IDisposable
         }
         if (UseDynamicRendering)
         {
+            var b = new VkImageMemoryBarrier2
+            {
+                sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+                srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                srcAccessMask = 0,
+                dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                dstAccessMask = (VkAccessFlags2)(
+                    VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+                ),
+                oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                newLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
+                image = fd.Backbuffer,
+                subresourceRange = new()
+                {
+                    aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                    levelCount = 1,
+                    layerCount = 1,
+                },
+            };
+            var barrierDependencyInfo = new VkDependencyInfo
+            {
+                sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+                imageMemoryBarrierCount = 1,
+                pImageMemoryBarriers = &b,
+            };
+            _vd.vkCmdPipelineBarrier2(fd.CommandBuffer, &barrierDependencyInfo);
+
             var color_attachment_info = new VkRenderingAttachmentInfo
             {
                 sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
@@ -751,12 +778,6 @@ class ImGui_ImplVulkanH_Window : IDisposable
                 // PStencilAttachment = &depth_attachment_info,
             };
 
-            // TransitionImageLayout(
-            //     _vd,
-            //     fd.CommandBuffer,
-            //     fd.Backbuffer,
-            //     VkImageLayout.ColorAttachmentOptimal
-            // );
             _vd.vkCmdBeginRendering(fd.CommandBuffer, &render_info);
         }
         else
@@ -792,12 +813,31 @@ class ImGui_ImplVulkanH_Window : IDisposable
         if (UseDynamicRendering)
         {
             _vd.vkCmdEndRendering(fd.CommandBuffer);
-            TransitionImageLayout(
-                _vd,
-                fd.CommandBuffer,
-                fd.Backbuffer,
-                VkImageLayout.PresentSrcKHR
-            );
+
+            var barrierPresent = new VkImageMemoryBarrier2
+            {
+                sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+                srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                srcAccessMask = (VkAccessFlags2)VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                dstAccessMask = 0,
+                oldLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
+                newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                image = fd.Backbuffer,
+                subresourceRange = new()
+                {
+                    aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                    levelCount = 1,
+                    layerCount = 1,
+                },
+            };
+            var barrierPresentDependencyInfo = new VkDependencyInfo
+            {
+                sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+                imageMemoryBarrierCount = 1,
+                pImageMemoryBarriers = &barrierPresent,
+            };
+            _vd.vkCmdPipelineBarrier2(fd.CommandBuffer, &barrierPresentDependencyInfo);
         }
         else
         {
@@ -847,44 +887,5 @@ class ImGui_ImplVulkanH_Window : IDisposable
                 err.ThrowIfError();
             SemaphoreIndex = (SemaphoreIndex + 1) % SemaphoreCount; // Now we can use the next set of semaphores
         }
-    }
-
-    public static unsafe void TransitionImageLayout(
-        VkDeviceApi vd,
-        VkCommandBuffer commandBuffer,
-        VkImage image,
-        VkImageLayout newLayout
-    )
-    {
-        VkImageMemoryBarrier barrier = new()
-        {
-            sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-            oldLayout = VkImageLayout.Undefined,
-            newLayout = newLayout,
-            srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            image = image,
-            subresourceRange =
-            {
-                aspectMask = VkImageAspectFlags.Color,
-                baseMipLevel = 0,
-                levelCount = 1,
-                baseArrayLayer = 0,
-                layerCount = 1,
-            },
-        };
-
-        vd.vkCmdPipelineBarrier(
-            commandBuffer,
-            VkPipelineStageFlags.BottomOfPipe,
-            VkPipelineStageFlags.TopOfPipe,
-            0,
-            0,
-            null,
-            0,
-            null,
-            1,
-            &barrier
-        );
     }
 }
