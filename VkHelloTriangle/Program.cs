@@ -46,7 +46,10 @@ static class Program
             swapchain.Extent,
             swapchain.Images
         );
-        using var pipeline = new PipelineObject(device.Api, renderTarget.RenderPass);
+        using var pipeline = new PipelineObject(device.Api, swapchain.Format, 
+        // renderTarget.RenderPass
+        null
+        );
 
         while (true)
         {
@@ -54,12 +57,30 @@ static class Program
             {
                 break;
             }
-            var (imageIndex, imageAvailableSemaphore, inFlightFence) = swapchain.Acquire();
-            var (commandBuffer, renderFinishedSemaphore) = renderTarget.BeginRenderPass(imageIndex);
+            var (imageIndex, imageAvailableSemaphore, renderFinishedSemaphore, inFlightFence) = swapchain.Acquire();
+
+            VkClearColorValue clearColor = default;
+            clearColor.float32[0] = 0.0f;
+            clearColor.float32[1] = 0.0f;
+            clearColor.float32[2] = 0.0f;
+            clearColor.float32[2] = 1.0f;
+            ReadOnlySpan<VkClearValue> clearValues = [new VkClearValue { color = clearColor }];
+            // var (commandBuffer, renderFinishedSemaphore) = renderTarget.BeginRenderPass(
+            //     imageIndex,
+            //     clearValues
+            // );
+            var commandBuffer = renderTarget.BeginRendering(
+                imageIndex,
+                swapchain.Extent,
+                clearValues
+            );
             {
-                pipeline.RecordCommandBuffer(commandBuffer, renderTarget.Extent);
+                pipeline.RecordCommandBuffer(commandBuffer);
             }
-            renderTarget.EndRenderPass(imageAvailableSemaphore, inFlightFence);
+            // renderTarget.EndRenderPass();
+            renderTarget.EndRendering(swapchain.Images[imageIndex]);
+            renderTarget.vkEndSubmitCommandBuffer(imageAvailableSemaphore, renderFinishedSemaphore, inFlightFence);
+
             swapchain.Present(imageIndex, renderFinishedSemaphore);
         }
 

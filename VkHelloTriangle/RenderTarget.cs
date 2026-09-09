@@ -1,13 +1,12 @@
 // https://github.com/Overv/VulkanTutorial/blob/main/code/15_hello_triangle.cpp
 
+using System.Runtime.CompilerServices;
 using Vortice.Vulkan;
 using static Vortice.Vulkan.Vulkan;
 
 class RenderTarget : IDisposable
 {
     private readonly VkDeviceApi _vkd;
-    private readonly VkFormat _imageFormat;
-    public readonly VkExtent2D Extent;
     public readonly VkRenderPass RenderPass;
 
     private readonly VkImageView[] _imageViews;
@@ -15,7 +14,6 @@ class RenderTarget : IDisposable
 
     private VkCommandPool _commandPool;
     private VkCommandBuffer _commandBuffer;
-    private VkSemaphore _renderFinishedSemaphore;
     private readonly VkQueue _graphicsQueue;
 
     public unsafe RenderTarget(
@@ -27,8 +25,6 @@ class RenderTarget : IDisposable
     )
     {
         _vkd = vkd;
-        _imageFormat = format;
-        Extent = extent;
         vkd.vkGetDeviceQueue(graphicsFamily, 0, out _graphicsQueue);
 
         {
@@ -40,7 +36,7 @@ class RenderTarget : IDisposable
                     sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
                     image = images[i],
                     viewType = VkImageViewType.Image2D,
-                    format = _imageFormat,
+                    format = format,
                 };
                 createInfo.components.r = VkComponentSwizzle.Identity;
                 createInfo.components.g = VkComponentSwizzle.Identity;
@@ -61,7 +57,7 @@ class RenderTarget : IDisposable
         {
             var colorAttachment = new VkAttachmentDescription
             {
-                format = _imageFormat,
+                format = format,
                 samples = VkSampleCountFlags.Count1,
                 loadOp = VkAttachmentLoadOp.Clear,
                 storeOp = VkAttachmentStoreOp.Store,
@@ -123,8 +119,8 @@ class RenderTarget : IDisposable
                     renderPass = RenderPass,
                     attachmentCount = 1,
                     pAttachments = &attachment,
-                    width = Extent.width,
-                    height = Extent.height,
+                    width = extent.width,
+                    height = extent.height,
                     layers = 1,
                 };
 
@@ -138,15 +134,6 @@ class RenderTarget : IDisposable
             }
         }
 
-        var semaphoreInfo = new VkSemaphoreCreateInfo
-        {
-            sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
-        };
-
-        if (vkd.vkCreateSemaphore(&semaphoreInfo, null, out _renderFinishedSemaphore) != VK_SUCCESS)
-        {
-            throw new Exception("failed to create synchronization objects for a frame!");
-        }
 
         var poolInfo = new VkCommandPoolCreateInfo
         {
@@ -178,7 +165,6 @@ class RenderTarget : IDisposable
 
     public unsafe void Dispose()
     {
-        _vkd.vkDestroySemaphore(_renderFinishedSemaphore, null);
         _vkd.vkDestroyCommandPool(_commandPool, null);
 
         foreach (var framebuffer in _framebuffers)
@@ -192,7 +178,46 @@ class RenderTarget : IDisposable
         _vkd.vkDestroyRenderPass(RenderPass, null);
     }
 
-    public unsafe (VkCommandBuffer, VkSemaphore) BeginRenderPass(uint imageIndex)
+    public unsafe void vkEndSubmitCommandBuffer(
+        VkSemaphore imageAvailableSemaphore,
+        VkSemaphore renderFinishedSemaphore,
+        VkFence inFlightFence
+    )
+    {
+        if (_vkd.vkEndCommandBuffer(_commandBuffer) != VK_SUCCESS)
+        {
+            throw new Exception("failed to record command buffer!");
+        }
+
+        var waitSemaphores = stackalloc VkSemaphore[] { imageAvailableSemaphore };
+        var waitStages = stackalloc VkPipelineStageFlags[]
+        {
+            VkPipelineStageFlags.ColorAttachmentOutput,
+        };
+        var signalSemaphores = stackalloc VkSemaphore[] { renderFinishedSemaphore };
+        var cmd = _commandBuffer;
+        var submitInfo = new VkSubmitInfo
+        {
+            sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+            waitSemaphoreCount = 1,
+            pWaitSemaphores = waitSemaphores,
+            pWaitDstStageMask = waitStages,
+            commandBufferCount = 1,
+            pCommandBuffers = &cmd,
+            signalSemaphoreCount = 1,
+            pSignalSemaphores = signalSemaphores,
+        };
+        if (_vkd.vkQueueSubmit(_graphicsQueue, 1, &submitInfo, inFlightFence) != VK_SUCCESS)
+        {
+            throw new Exception("failed to submit draw command buffer!");
+        }
+    }
+
+    public unsafe VkCommandBuffer  BeginRenderPass(
+        uint imageIndex,
+        VkExtent2D extent,
+        ReadOnlySpan<VkClearValue> clearValues
+    )
     {
         _vkd.vkResetCommandBuffer(
             _commandBuffer, /*VkCommandBufferResetFlagBits*/
@@ -215,50 +240,153 @@ class RenderTarget : IDisposable
             framebuffer = _framebuffers[imageIndex],
         };
         renderPassInfo.renderArea.offset = new(0, 0);
-        renderPassInfo.renderArea.extent = Extent;
+        renderPassInfo.renderArea.extent = extent;
 
-        var clearColor = new VkClearValue { };
-        clearColor.color.float32[0] = 0.0f;
-        clearColor.color.float32[1] = 0.0f;
-        clearColor.color.float32[2] = 0.0f;
-        clearColor.color.float32[2] = 1.0f;
-        renderPassInfo.clearValueCount = 1;
-        renderPassInfo.pClearValues = &clearColor;
+        fixed (VkClearValue* pClearValues = clearValues)
+        {
+            renderPassInfo.clearValueCount = (uint)clearValues.Length;
+            renderPassInfo.pClearValues = pClearValues;
+            _vkd.vkCmdBeginRenderPass(_commandBuffer, &renderPassInfo, VkSubpassContents.Inline);
+        }
 
-        _vkd.vkCmdBeginRenderPass(_commandBuffer, &renderPassInfo, VkSubpassContents.Inline);
+        var viewport = new VkViewport
+        {
+            x = 0.0f,
+            y = 0.0f,
+            width = extent.width,
+            height = extent.height,
+            minDepth = 0.0f,
+            maxDepth = 1.0f,
+        };
+        _vkd.vkCmdSetViewport(_commandBuffer, 0, 1, &viewport);
 
-        return (_commandBuffer, _renderFinishedSemaphore);
+        var scissor = new VkRect2D { offset = new(0, 0), extent = extent };
+        _vkd.vkCmdSetScissor(_commandBuffer, 0, 1, &scissor);
+
+        return _commandBuffer;
     }
 
-    public unsafe void EndRenderPass(VkSemaphore imageAvailableSemaphore, VkFence inFlightFence)
+    public void EndRenderPass()
     {
         _vkd.vkCmdEndRenderPass(_commandBuffer);
-        if (_vkd.vkEndCommandBuffer(_commandBuffer) != VK_SUCCESS)
+    }
+
+    public unsafe VkCommandBuffer BeginRendering(
+        uint imageIndex,
+        VkExtent2D extent,
+        ReadOnlySpan<VkClearValue> clearValues
+    )
+    {
+        _vkd.vkResetCommandBuffer(
+            _commandBuffer, /*VkCommandBufferResetFlagBits*/
+            0
+        );
+
+        var beginInfo = new VkCommandBufferBeginInfo
         {
-            throw new Exception("failed to record command buffer!");
+            sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        };
+        if (_vkd.vkBeginCommandBuffer(_commandBuffer, &beginInfo) != VK_SUCCESS)
+        {
+            throw new Exception("failed to begin recording command buffer!");
         }
 
-        var waitSemaphores = stackalloc VkSemaphore[] { imageAvailableSemaphore };
-        var waitStages = stackalloc VkPipelineStageFlags[]
+        var color_attachment_info = new VkRenderingAttachmentInfo
         {
-            VkPipelineStageFlags.ColorAttachmentOutput,
+            sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+            imageView = _imageViews[imageIndex],
+            imageLayout = VkImageLayout.ColorAttachmentOptimal,
+            loadOp = VkAttachmentLoadOp.Clear,
+            storeOp = VkAttachmentStoreOp.Store,
+            clearValue = clearValues[0],
         };
-        var signalSemaphores = stackalloc VkSemaphore[] { _renderFinishedSemaphore };
-        var cmd = _commandBuffer;
-        var submitInfo = new VkSubmitInfo
+        // var depth_attachment_info = new RenderingAttachmentInfo()
+        // {
+        //     SType = VK_STRUCTURE_TYPE_RenderingAttachmentInfo,
+        //     ImageView = DepthImageView,
+        //     ImageLayout = ImageLayout.DepthAttachmentOptimal,
+        //     LoadOp = depthLoadOp,
+        //     StoreOp = depthStoreOp,
+        //     ClearValue = new ClearValue { DepthStencil = clearDepthStencil },
+        // };
+        var render_info = new VkRenderingInfo
         {
-            sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-            waitSemaphoreCount = 1,
-            pWaitSemaphores = waitSemaphores,
-            pWaitDstStageMask = waitStages,
-            commandBufferCount = 1,
-            pCommandBuffers = &cmd,
-            signalSemaphoreCount = 1,
-            pSignalSemaphores = signalSemaphores,
+            sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+            renderArea = new() { extent = extent },
+            layerCount = 1,
+            colorAttachmentCount = 1,
+            pColorAttachments = &color_attachment_info,
+            // PDepthAttachment = &depth_attachment_info,
+            // PStencilAttachment = &depth_attachment_info,
         };
-        if (_vkd.vkQueueSubmit(_graphicsQueue, 1, &submitInfo, inFlightFence) != VK_SUCCESS)
+
+        // TransitionImageLayout(
+        //     _vd,
+        //     fd.CommandBuffer,
+        //     fd.Backbuffer,
+        //     VkImageLayout.ColorAttachmentOptimal
+        // );
+        _vkd.vkCmdBeginRendering(_commandBuffer, &render_info);
+
+        var viewport = new VkViewport
         {
-            throw new Exception("failed to submit draw command buffer!");
-        }
+            x = 0.0f,
+            y = 0.0f,
+            width = extent.width,
+            height = extent.height,
+            minDepth = 0.0f,
+            maxDepth = 1.0f,
+        };
+        _vkd.vkCmdSetViewport(_commandBuffer, 0, 1, &viewport);
+
+        var scissor = new VkRect2D { offset = new(0, 0), extent = extent };
+        _vkd.vkCmdSetScissor(_commandBuffer, 0, 1, &scissor);
+
+        return _commandBuffer;
+    }
+
+    public void EndRendering(VkImage image)
+    {
+        _vkd.vkCmdEndRendering(_commandBuffer);
+        TransitionImageLayout(_vkd, _commandBuffer, image, VkImageLayout.PresentSrcKHR);
+    }
+
+    public static unsafe void TransitionImageLayout(
+        VkDeviceApi vd,
+        VkCommandBuffer commandBuffer,
+        VkImage image,
+        VkImageLayout newLayout
+    )
+    {
+        VkImageMemoryBarrier barrier = new()
+        {
+            sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            oldLayout = VkImageLayout.Undefined,
+            newLayout = newLayout,
+            srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            image = image,
+            subresourceRange =
+            {
+                aspectMask = VkImageAspectFlags.Color,
+                baseMipLevel = 0,
+                levelCount = 1,
+                baseArrayLayer = 0,
+                layerCount = 1,
+            },
+        };
+
+        vd.vkCmdPipelineBarrier(
+            commandBuffer,
+            VkPipelineStageFlags.BottomOfPipe,
+            VkPipelineStageFlags.TopOfPipe,
+            0,
+            0,
+            null,
+            0,
+            null,
+            1,
+            &barrier
+        );
     }
 }

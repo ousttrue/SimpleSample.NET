@@ -44,6 +44,7 @@ class SwapchainObject : IDisposable
     public readonly VkExtent2D Extent;
     public readonly VkImage[] Images;
     private VkSemaphore _imageAvailableSemaphore;
+    private VkSemaphore _renderFinishedSemaphore;
     private VkFence _inFlightFence;
     private readonly VkQueue _presentQueue;
 
@@ -140,6 +141,8 @@ class SwapchainObject : IDisposable
         };
         if (
             vkd.vkCreateSemaphore(&semaphoreInfo, null, out _imageAvailableSemaphore) != VK_SUCCESS
+            || vkd.vkCreateSemaphore(&semaphoreInfo, null, out _renderFinishedSemaphore)
+                != VK_SUCCESS
             || vkd.vkCreateFence(&fenceInfo, null, out _inFlightFence) != VK_SUCCESS
         )
         {
@@ -149,12 +152,13 @@ class SwapchainObject : IDisposable
 
     public unsafe void Dispose()
     {
+        _vkd.vkDestroySemaphore(_renderFinishedSemaphore, null);
         _vkd.vkDestroySemaphore(_imageAvailableSemaphore, null);
         _vkd.vkDestroyFence(_inFlightFence, null);
         _vkd.vkDestroySwapchainKHR(_swapChain, null);
     }
 
-    public unsafe (uint, VkSemaphore, VkFence) Acquire()
+    public unsafe (uint, VkSemaphore, VkSemaphore, VkFence) Acquire()
     {
         _vkd.vkDeviceWaitIdle();
 
@@ -170,7 +174,7 @@ class SwapchainObject : IDisposable
             out var imageIndex
         );
 
-        return (imageIndex, _imageAvailableSemaphore, _inFlightFence);
+        return (imageIndex, _imageAvailableSemaphore, _renderFinishedSemaphore, _inFlightFence);
     }
 
     public unsafe void Present(uint imageIndex, VkSemaphore renderFinishedSemaphore)

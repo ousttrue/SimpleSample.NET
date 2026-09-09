@@ -21,10 +21,16 @@ unsafe class GlfwWindow : IDisposable
     {
         glfw.Init();
 
+
         glfw.WindowHint(WindowHintClientApi.ClientApi, ClientApi.NoApi);
         glfw.WindowHint(WindowHintBool.Resizable, false);
 
         _window = glfw.CreateWindow((int)WIDTH, (int)HEIGHT, "Vulkan", null, null);
+
+        // var m = glfw.GetWindowMonitor(_window);
+        var m = glfw.GetPrimaryMonitor();
+        glfw.GetMonitorContentScale(m, out var xscale, out var yscale);
+        Console.WriteLine($"MonitorScale: {xscale}:{yscale}");
     }
 
     public void Dispose()

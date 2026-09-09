@@ -31,7 +31,7 @@ class PipelineObject : IDisposable
 
     private readonly VkPipeline graphicsPipeline;
 
-    public unsafe PipelineObject(VkDeviceApi vkd, VkRenderPass renderPass)
+    public unsafe PipelineObject(VkDeviceApi vkd, VkFormat format, VkRenderPass? renderPass)
     {
         _vkd = vkd;
 
@@ -161,10 +161,25 @@ class PipelineObject : IDisposable
                 pColorBlendState = &colorBlending,
                 pDynamicState = &dynamicState,
                 layout = pipelineLayout,
-                renderPass = renderPass,
+                // renderPass = renderPasss,
                 subpass = 0,
                 basePipelineHandle = default,
             };
+            if (renderPass is VkRenderPass rp)
+            {
+                pipelineInfo.renderPass = rp;
+            }
+            else
+            {
+                var renderingCI = new VkPipelineRenderingCreateInfo
+                {
+                    sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+                    colorAttachmentCount = 1,
+                    pColorAttachmentFormats = &format,
+                    // depthAttachmentFormat = depthFormat
+                };
+                pipelineInfo.pNext = &renderingCI;
+            }
 
             VkPipeline _graphicsPipeline;
             if (
@@ -187,27 +202,9 @@ class PipelineObject : IDisposable
         _vkd.vkDestroyPipelineLayout(pipelineLayout, null);
     }
 
-    public unsafe void RecordCommandBuffer(
-        VkCommandBuffer commandBuffer,
-        VkExtent2D swapchainExtent
-    )
+    public void RecordCommandBuffer(VkCommandBuffer commandBuffer)
     {
         _vkd.vkCmdBindPipeline(commandBuffer, VkPipelineBindPoint.Graphics, graphicsPipeline);
-
-        var viewport = new VkViewport
-        {
-            x = 0.0f,
-            y = 0.0f,
-            width = swapchainExtent.width,
-            height = swapchainExtent.height,
-            minDepth = 0.0f,
-            maxDepth = 1.0f,
-        };
-        _vkd.vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
-
-        var scissor = new VkRect2D { offset = new(0, 0), extent = swapchainExtent };
-        _vkd.vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
-
         _vkd.vkCmdDraw(commandBuffer, 3, 1, 0, 0);
     }
 }

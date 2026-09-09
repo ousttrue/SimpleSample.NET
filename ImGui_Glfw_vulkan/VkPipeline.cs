@@ -1,7 +1,5 @@
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Silk.NET.Core.Native;
-using Silk.NET.OpenGL;
 using Vortice.Vulkan;
 using static Vortice.Vulkan.Vulkan;
 
