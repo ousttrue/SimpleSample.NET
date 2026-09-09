@@ -1,6 +1,5 @@
 ﻿// https://github.com/Overv/VulkanTutorial/blob/main/code/15_hello_triangle.cpp
 
-using System.Runtime.InteropServices;
 using System.Text;
 using Vortice.Vulkan;
 using static Vortice.Vulkan.Vulkan;
@@ -9,32 +8,16 @@ unsafe class HelloTriangleApplication : IDisposable
 {
     private readonly GlfwWindow _window;
 
-    const bool enableValidationLayers =
-#if DEBUG
-        true;
-#else
-        false;
-#endif
-
     // const int MAX_FRAMES_IN_FLIGHT = 2;
 
-    static readonly string[] validationLayers =
-    [
-        Encoding.ASCII.GetString(VK_LAYER_KHRONOS_VALIDATION_EXTENSION_NAME),
-    ];
     static readonly string[] deviceExtensions =
     [
         Encoding.ASCII.GetString(VK_KHR_SWAPCHAIN_EXTENSION_NAME),
     ];
 
-    private VkInstance instance;
-    private VkInstanceApi instanceApi;
+    private readonly InstanceObject _instance;
+    private readonly VkPhysicalDevice _physicalDevice;
 
-    private DebugUtilsMessengerObject debugUtilsMessenger;
-
-    private VkSurfaceKHR surface;
-
-    private VkPhysicalDevice physicalDevice;
     private VkDevice device;
     private VkDeviceApi deviceApi;
 
@@ -70,8 +53,30 @@ unsafe class HelloTriangleApplication : IDisposable
     public HelloTriangleApplication()
     {
         _window = new GlfwWindow();
-        initVulkan();
-        mainLoop();
+
+        _instance = new InstanceObject(_window);
+        _physicalDevice = _instance.pickPhysicalDevice(deviceExtensions);
+
+        createLogicalDevice();
+        createSwapChain();
+        createImageViews();
+        createRenderPass();
+        createGraphicsPipeline();
+        createFramebuffers();
+        createCommandPool();
+        createCommandBuffer();
+        createSyncObjects();
+
+        while (true)
+        {
+            if (!_window.NextFrame())
+            {
+                break;
+            }
+            drawFrame();
+        }
+
+        deviceApi.vkDeviceWaitIdle();
     }
 
     public void Dispose()
@@ -99,51 +104,9 @@ unsafe class HelloTriangleApplication : IDisposable
         deviceApi.vkDestroySwapchainKHR(swapChain, null);
         deviceApi.vkDestroyDevice(null);
 
-        if (enableValidationLayers)
-        {
-            debugUtilsMessenger.Dispose();
-        }
-
-        instanceApi.vkDestroySurfaceKHR(surface, null);
-        instanceApi.vkDestroyInstance(null);
-
-        vkShutdown();
+        _instance.Dispose();
 
         _window.Dispose();
-    }
-
-    void initVulkan()
-    {
-        createInstance(_window.GetVkExtensions());
-        if (enableValidationLayers)
-        {
-            debugUtilsMessenger = new(instanceApi);
-        }
-        surface = new(_window.CreateVkSurface(instance.Handle));
-        pickPhysicalDevice();
-        createLogicalDevice();
-        createSwapChain();
-        createImageViews();
-        createRenderPass();
-        createGraphicsPipeline();
-        createFramebuffers();
-        createCommandPool();
-        createCommandBuffer();
-        createSyncObjects();
-    }
-
-    void mainLoop()
-    {
-        while (true)
-        {
-            if (!_window.NextFrame())
-            {
-                break;
-            }
-            drawFrame();
-        }
-
-        deviceApi.vkDeviceWaitIdle();
     }
 
     static void StrCopy(Span<byte> dst, ReadOnlySpan<byte> src)
@@ -151,85 +114,13 @@ unsafe class HelloTriangleApplication : IDisposable
         src.CopyTo(dst);
     }
 
-    void createInstance(ReadOnlySpan<IntPtr> glfw_extensions)
-    {
-        vkInitialize();
-        if (enableValidationLayers && !checkValidationLayerSupport())
-        {
-            throw new Exception("validation layers requested, but not available!");
-        }
-
-        using var extensions = new ByteStringArrayAllocator();
-        extensions.AddSpan(glfw_extensions);
-        if (enableValidationLayers)
-        {
-            extensions.Add(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-        }
-
-        var appInfo = new VkApplicationInfo
-        {
-            sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
-            pApplicationName = new VkUtf8ReadOnlyString("Hello Triangle"u8),
-            applicationVersion = new VkVersion(1, 0, 0),
-            pEngineName = new VkUtf8ReadOnlyString("No Engine"u8),
-            engineVersion = new VkVersion(1, 0, 0),
-            apiVersion = VK_API_VERSION_1_0,
-        };
-        var createInfo = new VkInstanceCreateInfo
-        {
-            sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-            pApplicationInfo = &appInfo,
-            enabledLayerCount = 0,
-            pNext = null,
-        };
-        (createInfo.enabledExtensionCount, createInfo.ppEnabledExtensionNames) = extensions;
-
-        VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo = DebugUtilsMessengerObject.CreateInfo;
-        ByteStringArrayAllocator layers = [.. validationLayers];
-        if (enableValidationLayers)
-        {
-            (createInfo.enabledLayerCount, createInfo.ppEnabledLayerNames) = layers;
-            createInfo.pNext = &debugCreateInfo;
-        }
-        if (vkCreateInstance(&createInfo, null, out instance) != VK_SUCCESS)
-        {
-            throw new Exception("failed to create instance!");
-        }
-        instanceApi = new VkInstanceApi(instance);
-    }
-
-    void pickPhysicalDevice()
-    {
-        uint physicalDeviceCount = 0;
-        instanceApi.vkEnumeratePhysicalDevices(&physicalDeviceCount, null);
-
-        if (physicalDeviceCount == 0)
-        {
-            throw new Exception("failed to find GPUs with Vulkan support!");
-        }
-
-        Span<VkPhysicalDevice> physicalDevices =
-            stackalloc VkPhysicalDevice[(int)physicalDeviceCount];
-        instanceApi.vkEnumeratePhysicalDevices(physicalDevices);
-
-        foreach (var physicalDevice in physicalDevices)
-        {
-            if (isDeviceSuitable(physicalDevice))
-            {
-                this.physicalDevice = physicalDevice;
-                break;
-            }
-        }
-
-        if (physicalDevice.Handle == default)
-        {
-            throw new Exception("failed to find a suitable GPU!");
-        }
-    }
-
     void createLogicalDevice()
     {
-        var indices = QueueFamilyIndices.findQueueFamilies(instanceApi, physicalDevice, surface);
+        var indices = QueueFamilyIndices.findQueueFamilies(
+            _instance.Api,
+            _physicalDevice,
+            _instance.Surface
+        );
 
         var uniqueQueueFamilies = new HashSet<uint>()
         {
@@ -262,17 +153,20 @@ unsafe class HelloTriangleApplication : IDisposable
         ByteStringArrayAllocator extensions = [.. deviceExtensions];
         (createInfo.enabledExtensionCount, createInfo.ppEnabledExtensionNames) = extensions;
 
-        ByteStringArrayAllocator layers = [.. validationLayers];
-        if (enableValidationLayers)
+        ByteStringArrayAllocator layers = [.. InstanceObject.ValidationLayers];
+        if (InstanceObject.EnableValidationLayers)
         {
             (createInfo.enabledLayerCount, createInfo.ppEnabledLayerNames) = layers;
         }
 
-        if (instanceApi.vkCreateDevice(physicalDevice, &createInfo, null, out device) != VK_SUCCESS)
+        if (
+            _instance.Api.vkCreateDevice(_physicalDevice, &createInfo, null, out device)
+            != VK_SUCCESS
+        )
         {
             throw new Exception("failed to create logical device!");
         }
-        deviceApi = new VkDeviceApi(instanceApi, device);
+        deviceApi = new VkDeviceApi(_instance.Api, device);
 
         deviceApi.vkGetDeviceQueue(indices.GraphicsFamily, 0, out graphicsQueue);
         deviceApi.vkGetDeviceQueue(indices.PresentFamily, 0, out presentQueue);
@@ -280,10 +174,10 @@ unsafe class HelloTriangleApplication : IDisposable
 
     void createSwapChain()
     {
-        var swapChainSupport = SwapChainSupportDetails.querySwapChainSupport(
-            instanceApi,
-            physicalDevice,
-            surface
+        var swapChainSupport = SwapchainSupportDetails.querySwapchainSupport(
+            _instance.Api,
+            _physicalDevice,
+            _instance.Surface
         );
 
         var surfaceFormat = chooseSwapSurfaceFormat(swapChainSupport.formats);
@@ -309,7 +203,7 @@ unsafe class HelloTriangleApplication : IDisposable
         var createInfo = new VkSwapchainCreateInfoKHR
         {
             sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-            surface = surface,
+            surface = _instance.Surface,
             minImageCount = imageCount,
             imageFormat = surfaceFormat.format,
             imageColorSpace = surfaceFormat.colorSpace,
@@ -318,7 +212,11 @@ unsafe class HelloTriangleApplication : IDisposable
             imageUsage = VkImageUsageFlags.ColorAttachment,
         };
 
-        var indices = QueueFamilyIndices.findQueueFamilies(instanceApi, physicalDevice, surface);
+        var indices = QueueFamilyIndices.findQueueFamilies(
+            _instance.Api,
+            _physicalDevice,
+            _instance.Surface
+        );
         var queueFamilyIndices = stackalloc uint[]
         {
             indices.GraphicsFamily,
@@ -632,9 +530,9 @@ unsafe class HelloTriangleApplication : IDisposable
     void createCommandPool()
     {
         var queueFamilyIndices = QueueFamilyIndices.findQueueFamilies(
-            instanceApi,
-            physicalDevice,
-            surface
+            _instance.Api,
+            _physicalDevice,
+            _instance.Surface
         );
 
         var poolInfo = new VkCommandPoolCreateInfo
@@ -856,86 +754,6 @@ unsafe class HelloTriangleApplication : IDisposable
         }
 
         return VkPresentModeKHR.Fifo;
-    }
-
-    bool isDeviceSuitable(VkPhysicalDevice physicalDevice)
-    {
-        var indices = QueueFamilyIndices.findQueueFamilies(instanceApi, physicalDevice, surface);
-
-        bool extensionsSupported = checkDeviceExtensionSupport(physicalDevice);
-
-        bool swapChainAdequate = false;
-        if (extensionsSupported)
-        {
-            var swapChainSupport = SwapChainSupportDetails.querySwapChainSupport(
-                instanceApi,
-                physicalDevice,
-                surface
-            );
-            swapChainAdequate =
-                swapChainSupport.formats.Length > 0 && swapChainSupport.presentModes.Length > 0;
-        }
-
-        return extensionsSupported && swapChainAdequate;
-    }
-
-    bool checkDeviceExtensionSupport(VkPhysicalDevice physicalDevice)
-    {
-        uint extensionCount;
-        instanceApi.vkEnumerateDeviceExtensionProperties(
-            physicalDevice,
-            null,
-            &extensionCount,
-            null
-        );
-
-        var availableExtensions = stackalloc VkExtensionProperties[(int)extensionCount];
-        instanceApi.vkEnumerateDeviceExtensionProperties(
-            physicalDevice,
-            (byte*)null,
-            &extensionCount,
-            availableExtensions
-        );
-
-        HashSet<string> requiredExtensions = [.. deviceExtensions];
-        for (int i = 0; i < extensionCount; ++i)
-        {
-            var extensionName =
-                Marshal.PtrToStringAnsi((nint)availableExtensions[i].extensionName)
-                ?? throw new Exception();
-            requiredExtensions.Remove(extensionName);
-        }
-
-        return requiredExtensions.Count == 0;
-    }
-
-    bool checkValidationLayerSupport()
-    {
-        vkEnumerateInstanceLayerProperties(out var layerCount);
-        Span<VkLayerProperties> availableLayers = stackalloc VkLayerProperties[(int)layerCount];
-        vkEnumerateInstanceLayerProperties(availableLayers);
-
-        foreach (var layerName in validationLayers)
-        {
-            bool layerFound = false;
-
-            foreach (var available in availableLayers)
-            {
-                var availableLayerName = Marshal.PtrToStringAnsi((nint)available.layerName);
-                if (layerName == availableLayerName)
-                {
-                    layerFound = true;
-                    break;
-                }
-            }
-
-            if (!layerFound)
-            {
-                return false;
-            }
-        }
-
-        return true;
     }
 }
 

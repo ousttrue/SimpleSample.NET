@@ -2,13 +2,13 @@
 
 using Vortice.Vulkan;
 
-record struct SwapChainSupportDetails(
+record struct SwapchainSupportDetails(
     VkSurfaceCapabilitiesKHR capabilities,
     VkSurfaceFormatKHR[] formats,
     VkPresentModeKHR[] presentModes
 )
 {
-    public static SwapChainSupportDetails querySwapChainSupport(
+    public static SwapchainSupportDetails querySwapchainSupport(
         VkInstanceApi vki,
         VkPhysicalDevice physicalDevice,
         VkSurfaceKHR surface
