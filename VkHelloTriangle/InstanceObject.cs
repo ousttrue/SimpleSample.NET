@@ -96,40 +96,17 @@ class InstanceObject : IDisposable
     private DebugUtilsMessengerObject debugUtilsMessenger;
     public VkSurfaceKHR Surface;
 
-    public InstanceObject(GlfwWindow _window)
+    public unsafe InstanceObject(GlfwWindow _window)
     {
         vkInitialize();
 
-        createInstance(_window.GetVkExtensions());
-        if (EnableValidationLayers)
-        {
-            debugUtilsMessenger = new(Api);
-        }
-        Surface = new(_window.CreateVkSurface(instance.Handle));
-    }
-
-    public unsafe void Dispose()
-    {
-        if (EnableValidationLayers)
-        {
-            debugUtilsMessenger.Dispose();
-        }
-
-        Api.vkDestroySurfaceKHR(Surface, null);
-        Api.vkDestroyInstance(null);
-
-        vkShutdown();
-    }
-
-    unsafe void createInstance(ReadOnlySpan<IntPtr> glfw_extensions)
-    {
         if (EnableValidationLayers && !checkValidationLayerSupport())
         {
             throw new Exception("validation layers requested, but not available!");
         }
 
         using var extensions = new ByteStringArrayAllocator();
-        extensions.AddSpan(glfw_extensions);
+        extensions.AddSpan(_window.GetVkExtensions());
         if (EnableValidationLayers)
         {
             extensions.Add(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
@@ -165,6 +142,25 @@ class InstanceObject : IDisposable
             throw new Exception("failed to create instance!");
         }
         Api = new VkInstanceApi(instance);
+
+        if (EnableValidationLayers)
+        {
+            debugUtilsMessenger = new(Api);
+        }
+        Surface = new(_window.CreateVkSurface(instance.Handle));
+    }
+
+    public unsafe void Dispose()
+    {
+        if (EnableValidationLayers)
+        {
+            debugUtilsMessenger.Dispose();
+        }
+
+        Api.vkDestroySurfaceKHR(Surface, null);
+        Api.vkDestroyInstance(null);
+
+        vkShutdown();
     }
 
     public unsafe VkPhysicalDevice pickPhysicalDevice(ReadOnlySpan<string> deviceExtensions)

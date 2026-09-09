@@ -1,6 +1,5 @@
 ﻿// https://github.com/Overv/VulkanTutorial/blob/main/code/15_hello_triangle.cpp
 
-using System.Text;
 using Vortice.Vulkan;
 using static Vortice.Vulkan.Vulkan;
 
@@ -10,19 +9,9 @@ unsafe class HelloTriangleApplication : IDisposable
 
     // const int MAX_FRAMES_IN_FLIGHT = 2;
 
-    static readonly string[] deviceExtensions =
-    [
-        Encoding.ASCII.GetString(VK_KHR_SWAPCHAIN_EXTENSION_NAME),
-    ];
-
     private readonly InstanceObject _instance;
     private readonly VkPhysicalDevice _physicalDevice;
-
-    private VkDevice device;
-    private VkDeviceApi deviceApi;
-
-    private VkQueue graphicsQueue;
-    private VkQueue presentQueue;
+    private readonly DeviceObject _device;
 
     // private KhrSwapchain khrSwapchain;
     private VkSwapchainKHR swapChain;
@@ -55,9 +44,18 @@ unsafe class HelloTriangleApplication : IDisposable
         _window = new GlfwWindow();
 
         _instance = new InstanceObject(_window);
-        _physicalDevice = _instance.pickPhysicalDevice(deviceExtensions);
-
-        createLogicalDevice();
+        _physicalDevice = _instance.pickPhysicalDevice(DeviceObject.DeviceExtensions);
+        var indices = QueueFamilyIndices.findQueueFamilies(
+            _instance.Api,
+            _physicalDevice,
+            _instance.Surface
+        );
+        _device = new DeviceObject(
+            _instance.Api,
+            _physicalDevice,
+            indices.GraphicsFamily,
+            indices.PresentFamily
+        );
         createSwapChain();
         createImageViews();
         createRenderPass();
@@ -76,100 +74,40 @@ unsafe class HelloTriangleApplication : IDisposable
             drawFrame();
         }
 
-        deviceApi.vkDeviceWaitIdle();
+        _device.Api.vkDeviceWaitIdle();
     }
 
     public void Dispose()
     {
-        deviceApi.vkDestroySemaphore(renderFinishedSemaphore, null);
-        deviceApi.vkDestroySemaphore(imageAvailableSemaphore, null);
-        deviceApi.vkDestroyFence(inFlightFence, null);
+        _device.Api.vkDestroySemaphore(renderFinishedSemaphore, null);
+        _device.Api.vkDestroySemaphore(imageAvailableSemaphore, null);
+        _device.Api.vkDestroyFence(inFlightFence, null);
 
-        deviceApi.vkDestroyCommandPool(commandPool, null);
+        _device.Api.vkDestroyCommandPool(commandPool, null);
 
         foreach (var framebuffer in swapChainFramebuffers)
         {
-            deviceApi.vkDestroyFramebuffer(framebuffer, null);
+            _device.Api.vkDestroyFramebuffer(framebuffer, null);
         }
 
-        deviceApi.vkDestroyPipeline(graphicsPipeline, null);
-        deviceApi.vkDestroyPipelineLayout(pipelineLayout, null);
-        deviceApi.vkDestroyRenderPass(renderPass, null);
+        _device.Api.vkDestroyPipeline(graphicsPipeline, null);
+        _device.Api.vkDestroyPipelineLayout(pipelineLayout, null);
+        _device.Api.vkDestroyRenderPass(renderPass, null);
 
         foreach (var imageView in swapChainImageViews)
         {
-            deviceApi.vkDestroyImageView(imageView, null);
+            _device.Api.vkDestroyImageView(imageView, null);
         }
 
-        deviceApi.vkDestroySwapchainKHR(swapChain, null);
-        deviceApi.vkDestroyDevice(null);
-
+        _device.Api.vkDestroySwapchainKHR(swapChain, null);
+        _device.Dispose();
         _instance.Dispose();
-
         _window.Dispose();
     }
 
     static void StrCopy(Span<byte> dst, ReadOnlySpan<byte> src)
     {
         src.CopyTo(dst);
-    }
-
-    void createLogicalDevice()
-    {
-        var indices = QueueFamilyIndices.findQueueFamilies(
-            _instance.Api,
-            _physicalDevice,
-            _instance.Surface
-        );
-
-        var uniqueQueueFamilies = new HashSet<uint>()
-        {
-            indices.GraphicsFamily,
-            indices.PresentFamily,
-        };
-        var queueCreateInfos = stackalloc VkDeviceQueueCreateInfo[2];
-        float queuePriority = 1.0f;
-
-        uint uniq = 0;
-        foreach (var queueFamily in uniqueQueueFamilies)
-        {
-            queueCreateInfos[uniq].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-            queueCreateInfos[uniq].queueFamilyIndex = queueFamily;
-            queueCreateInfos[uniq].queueCount = 1;
-            queueCreateInfos[uniq].pQueuePriorities = &queuePriority;
-            ++uniq;
-        }
-
-        VkPhysicalDeviceFeatures deviceFeatures = default;
-
-        var createInfo = new VkDeviceCreateInfo
-        {
-            sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-            queueCreateInfoCount = uniq,
-            pQueueCreateInfos = queueCreateInfos,
-            pEnabledFeatures = &deviceFeatures,
-        };
-
-        ByteStringArrayAllocator extensions = [.. deviceExtensions];
-        (createInfo.enabledExtensionCount, createInfo.ppEnabledExtensionNames) = extensions;
-
-        ByteStringArrayAllocator layers = [.. InstanceObject.ValidationLayers];
-        if (InstanceObject.EnableValidationLayers)
-        {
-            (createInfo.enabledLayerCount, createInfo.ppEnabledLayerNames) = layers;
-        }
-
-        if (
-            _instance.Api.vkCreateDevice(_physicalDevice, &createInfo, null, out device)
-            != VK_SUCCESS
-        )
-        {
-            throw new Exception("failed to create logical device!");
-        }
-        deviceApi = new VkDeviceApi(_instance.Api, device);
-
-        deviceApi.vkGetDeviceQueue(indices.GraphicsFamily, 0, out graphicsQueue);
-        deviceApi.vkGetDeviceQueue(indices.PresentFamily, 0, out presentQueue);
     }
 
     void createSwapChain()
@@ -242,16 +180,16 @@ unsafe class HelloTriangleApplication : IDisposable
 
         createInfo.oldSwapchain = default;
 
-        if (deviceApi.vkCreateSwapchainKHR(&createInfo, null, out swapChain) != VK_SUCCESS)
+        if (_device.Api.vkCreateSwapchainKHR(&createInfo, null, out swapChain) != VK_SUCCESS)
         {
             throw new Exception("failed to create swap chain!");
         }
 
-        deviceApi.vkGetSwapchainImagesKHR(swapChain, &imageCount, null);
+        _device.Api.vkGetSwapchainImagesKHR(swapChain, &imageCount, null);
         swapChainImages = new VkImage[(int)imageCount];
         fixed (VkImage* images = swapChainImages)
         {
-            deviceApi.vkGetSwapchainImagesKHR(swapChain, &imageCount, images);
+            _device.Api.vkGetSwapchainImagesKHR(swapChain, &imageCount, images);
         }
 
         swapChainImageFormat = surfaceFormat.format;
@@ -282,7 +220,7 @@ unsafe class HelloTriangleApplication : IDisposable
             createInfo.subresourceRange.layerCount = 1;
 
             if (
-                deviceApi.vkCreateImageView(&createInfo, null, out swapChainImageViews[i])
+                _device.Api.vkCreateImageView(&createInfo, null, out swapChainImageViews[i])
                 != VK_SUCCESS
             )
             {
@@ -339,7 +277,7 @@ unsafe class HelloTriangleApplication : IDisposable
             pDependencies = &dependency,
         };
 
-        if (deviceApi.vkCreateRenderPass(&renderPassInfo, null, out renderPass) != VK_SUCCESS)
+        if (_device.Api.vkCreateRenderPass(&renderPassInfo, null, out renderPass) != VK_SUCCESS)
         {
             throw new Exception("failed to create render pass!");
         }
@@ -453,7 +391,7 @@ unsafe class HelloTriangleApplication : IDisposable
             };
 
             if (
-                deviceApi.vkCreatePipelineLayout(&pipelineLayoutInfo, null, out pipelineLayout)
+                _device.Api.vkCreatePipelineLayout(&pipelineLayoutInfo, null, out pipelineLayout)
                 != VK_SUCCESS
             )
             {
@@ -480,7 +418,7 @@ unsafe class HelloTriangleApplication : IDisposable
 
             VkPipeline _graphicsPipeline;
             if (
-                deviceApi.vkCreateGraphicsPipelines(
+                _device.Api.vkCreateGraphicsPipelines(
                     default,
                     1,
                     &pipelineInfo,
@@ -493,8 +431,8 @@ unsafe class HelloTriangleApplication : IDisposable
             }
             graphicsPipeline = _graphicsPipeline;
 
-            deviceApi.vkDestroyShaderModule(fragShaderModule, null);
-            deviceApi.vkDestroyShaderModule(vertShaderModule, null);
+            _device.Api.vkDestroyShaderModule(fragShaderModule, null);
+            _device.Api.vkDestroyShaderModule(vertShaderModule, null);
         }
     }
 
@@ -518,7 +456,7 @@ unsafe class HelloTriangleApplication : IDisposable
             };
 
             if (
-                deviceApi.vkCreateFramebuffer(&framebufferInfo, null, out swapChainFramebuffers[i])
+                _device.Api.vkCreateFramebuffer(&framebufferInfo, null, out swapChainFramebuffers[i])
                 != VK_SUCCESS
             )
             {
@@ -542,7 +480,7 @@ unsafe class HelloTriangleApplication : IDisposable
             queueFamilyIndex = queueFamilyIndices.GraphicsFamily,
         };
 
-        if (deviceApi.vkCreateCommandPool(&poolInfo, null, out commandPool) != VK_SUCCESS)
+        if (_device.Api.vkCreateCommandPool(&poolInfo, null, out commandPool) != VK_SUCCESS)
         {
             throw new Exception("failed to create command pool!");
         }
@@ -559,7 +497,7 @@ unsafe class HelloTriangleApplication : IDisposable
         };
 
         VkCommandBuffer _commandBuffer;
-        if (deviceApi.vkAllocateCommandBuffers(&allocInfo, &_commandBuffer) != VK_SUCCESS)
+        if (_device.Api.vkAllocateCommandBuffers(&allocInfo, &_commandBuffer) != VK_SUCCESS)
         {
             throw new Exception("failed to allocate command buffers!");
         }
@@ -572,7 +510,7 @@ unsafe class HelloTriangleApplication : IDisposable
         {
             sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
         };
-        if (deviceApi.vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS)
+        if (_device.Api.vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS)
         {
             throw new Exception("failed to begin recording command buffer!");
         }
@@ -594,9 +532,9 @@ unsafe class HelloTriangleApplication : IDisposable
         renderPassInfo.clearValueCount = 1;
         renderPassInfo.pClearValues = &clearColor;
 
-        deviceApi.vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VkSubpassContents.Inline);
+        _device.Api.vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VkSubpassContents.Inline);
 
-        deviceApi.vkCmdBindPipeline(commandBuffer, VkPipelineBindPoint.Graphics, graphicsPipeline);
+        _device.Api.vkCmdBindPipeline(commandBuffer, VkPipelineBindPoint.Graphics, graphicsPipeline);
 
         var viewport = new VkViewport
         {
@@ -607,15 +545,15 @@ unsafe class HelloTriangleApplication : IDisposable
             minDepth = 0.0f,
             maxDepth = 1.0f,
         };
-        deviceApi.vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+        _device.Api.vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
 
         var scissor = new VkRect2D { offset = new(0, 0), extent = swapChainExtent };
-        deviceApi.vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+        _device.Api.vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-        deviceApi.vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+        _device.Api.vkCmdDraw(commandBuffer, 3, 1, 0, 0);
 
-        deviceApi.vkCmdEndRenderPass(commandBuffer);
-        if (deviceApi.vkEndCommandBuffer(commandBuffer) != VK_SUCCESS)
+        _device.Api.vkCmdEndRenderPass(commandBuffer);
+        if (_device.Api.vkEndCommandBuffer(commandBuffer) != VK_SUCCESS)
         {
             throw new Exception("failed to record command buffer!");
         }
@@ -635,11 +573,11 @@ unsafe class HelloTriangleApplication : IDisposable
         };
 
         if (
-            deviceApi.vkCreateSemaphore(&semaphoreInfo, null, out imageAvailableSemaphore)
+            _device.Api.vkCreateSemaphore(&semaphoreInfo, null, out imageAvailableSemaphore)
                 != VK_SUCCESS
-            || deviceApi.vkCreateSemaphore(&semaphoreInfo, null, out renderFinishedSemaphore)
+            || _device.Api.vkCreateSemaphore(&semaphoreInfo, null, out renderFinishedSemaphore)
                 != VK_SUCCESS
-            || deviceApi.vkCreateFence(&fenceInfo, null, out inFlightFence) != VK_SUCCESS
+            || _device.Api.vkCreateFence(&fenceInfo, null, out inFlightFence) != VK_SUCCESS
         )
         {
             throw new Exception("failed to create synchronization objects for a frame!");
@@ -649,11 +587,11 @@ unsafe class HelloTriangleApplication : IDisposable
     void drawFrame()
     {
         var _inFlightFence = inFlightFence;
-        deviceApi.vkWaitForFences(1, &_inFlightFence, true, ulong.MaxValue);
-        deviceApi.vkResetFences(1, &_inFlightFence);
+        _device.Api.vkWaitForFences(1, &_inFlightFence, true, ulong.MaxValue);
+        _device.Api.vkResetFences(1, &_inFlightFence);
 
         uint imageIndex;
-        deviceApi.vkAcquireNextImageKHR(
+        _device.Api.vkAcquireNextImageKHR(
             swapChain,
             ulong.MaxValue,
             imageAvailableSemaphore,
@@ -661,7 +599,7 @@ unsafe class HelloTriangleApplication : IDisposable
             &imageIndex
         );
 
-        deviceApi.vkResetCommandBuffer(
+        _device.Api.vkResetCommandBuffer(
             commandBuffer, /*VkCommandBufferResetFlagBits*/
             0
         );
@@ -685,7 +623,7 @@ unsafe class HelloTriangleApplication : IDisposable
             signalSemaphoreCount = 1,
             pSignalSemaphores = signalSemaphores,
         };
-        if (deviceApi.vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFence) != VK_SUCCESS)
+        if (_device.Api.vkQueueSubmit(_device.GraphicsQueue, 1, &submitInfo, inFlightFence) != VK_SUCCESS)
         {
             throw new Exception("failed to submit draw command buffer!");
         }
@@ -701,7 +639,7 @@ unsafe class HelloTriangleApplication : IDisposable
             pImageIndices = &imageIndex,
         };
 
-        deviceApi.vkQueuePresentKHR(presentQueue, &presentInfo);
+        _device.Api.vkQueuePresentKHR(_device.PresentQueue, &presentInfo);
     }
 
     VkShaderModule createShaderModule(ReadOnlySpan<byte> code)
@@ -716,7 +654,7 @@ unsafe class HelloTriangleApplication : IDisposable
             };
 
             if (
-                deviceApi.vkCreateShaderModule(&createInfo, null, out var shaderModule)
+                _device.Api.vkCreateShaderModule(&createInfo, null, out var shaderModule)
                 != VK_SUCCESS
             )
             {
