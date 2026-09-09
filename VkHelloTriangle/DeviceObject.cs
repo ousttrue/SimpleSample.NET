@@ -14,7 +14,6 @@ public class DeviceObject : IDisposable
     private readonly VkDevice device;
     public readonly VkDeviceApi Api;
     public readonly VkQueue GraphicsQueue;
-    public readonly VkQueue PresentQueue;
 
     public unsafe DeviceObject(
         VkInstanceApi vki,
@@ -37,11 +36,29 @@ public class DeviceObject : IDisposable
             ++uniq;
         }
 
-        VkPhysicalDeviceFeatures deviceFeatures = default;
+        var enabledVk12Features = new VkPhysicalDeviceVulkan12Features
+        {
+            sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+            descriptorIndexing = true,
+            shaderSampledImageArrayNonUniformIndexing = true,
+            descriptorBindingVariableDescriptorCount = true,
+            runtimeDescriptorArray = true,
+            bufferDeviceAddress = true,
+        };
+        var enabledVk13Features = new VkPhysicalDeviceVulkan13Features
+        {
+            sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
+            pNext = &enabledVk12Features,
+            synchronization2 = true,
+            dynamicRendering = true,
+        };
+        var enabledVk10Features = new VkPhysicalDeviceFeatures { samplerAnisotropy = true };
 
+        VkPhysicalDeviceFeatures deviceFeatures = default;
         var createInfo = new VkDeviceCreateInfo
         {
             sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+            pNext = &enabledVk13Features,
             queueCreateInfoCount = uniq,
             pQueueCreateInfos = queueCreateInfos,
             pEnabledFeatures = &deviceFeatures,
@@ -63,7 +80,6 @@ public class DeviceObject : IDisposable
         Api = new VkDeviceApi(vki, device);
 
         Api.vkGetDeviceQueue(graphicsFamily, 0, out GraphicsQueue);
-        Api.vkGetDeviceQueue(presentFamily, 0, out PresentQueue);
     }
 
     public unsafe void Dispose()

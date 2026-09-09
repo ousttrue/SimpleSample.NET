@@ -38,12 +38,29 @@ record struct SwapchainSupportDetails(
             throw new Exception("No present mode");
         }
         Span<VkPresentModeKHR> presentModes = stackalloc VkPresentModeKHR[(int)presentModeCount];
-        vki.vkGetPhysicalDeviceSurfacePresentModesKHR(
-            physicalDevice,
-            surface,
-            presentModes
-        );
+        vki.vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, presentModes);
 
         return new(capabilities, formats.ToArray(), presentModes.ToArray());
     }
-};
+
+    public VkExtent2D CalcExtent(VkExtent2D actualExtent)
+    {
+        if (capabilities.currentExtent.width != uint.MaxValue)
+        {
+            return capabilities.currentExtent;
+        }
+
+        actualExtent.width = Math.Clamp(
+            actualExtent.width,
+            capabilities.minImageExtent.width,
+            capabilities.maxImageExtent.width
+        );
+        actualExtent.height = Math.Clamp(
+            actualExtent.height,
+            capabilities.minImageExtent.height,
+            capabilities.maxImageExtent.height
+        );
+
+        return actualExtent;
+    }
+}

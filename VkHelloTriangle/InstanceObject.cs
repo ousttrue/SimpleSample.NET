@@ -119,7 +119,7 @@ class InstanceObject : IDisposable
             applicationVersion = new VkVersion(1, 0, 0),
             pEngineName = new VkUtf8ReadOnlyString("No Engine"u8),
             engineVersion = new VkVersion(1, 0, 0),
-            apiVersion = VK_API_VERSION_1_0,
+            apiVersion = VK_API_VERSION_1_3,
         };
         var createInfo = new VkInstanceCreateInfo
         {
