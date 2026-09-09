@@ -1,6 +1,5 @@
 // https://github.com/ocornut/imgui/blob/master/examples/example_glfw_vulkan/main.cpp
 
-using ImGuiNET;
 using Vortice.Vulkan;
 using static Vortice.Vulkan.Vulkan;
 
@@ -462,88 +461,6 @@ class ImGui_ImplVulkanH_Window : IDisposable
             image_usage
         );
         ImGui_ImplVulkanH_CreateWindowCommandBuffers(queue_family);
-
-        // FIXME: to submit the command buffer, we need a queue. In the examples folder, the ImGui_ImplVulkanH_CreateOrResizeWindow function is called
-        // before the ImGui_ImplVulkan_Init function, so we don't have access to the queue yet. Here we have the queue_family that we can use to grab
-        // a queue from the device and submit the command buffer. It would be better to have access to the queue as suggested in the FIXME below.
-        VkCommandPool command_pool;
-        var pool_info = new VkCommandPoolCreateInfo
-        {
-            sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-            queueFamilyIndex = queue_family,
-        };
-        _vd.vkCreateCommandPool(&pool_info, default, &command_pool).ThrowIfError();
-
-        var fence_info = new VkFenceCreateInfo { sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
-        VkFence fence;
-        _vd.vkCreateFence(&fence_info, default, &fence).ThrowIfError();
-
-        var alloc_info = new VkCommandBufferAllocateInfo
-        {
-            sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-            commandPool = command_pool,
-            level = VkCommandBufferLevel.Primary,
-            commandBufferCount = 1,
-        };
-        VkCommandBuffer command_buffer;
-        _vd.vkAllocateCommandBuffers(&alloc_info, &command_buffer).ThrowIfError();
-
-        var begin_info = new VkCommandBufferBeginInfo
-        {
-            sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-            flags = VkCommandBufferUsageFlags.OneTimeSubmit,
-        };
-        _vd.vkBeginCommandBuffer(command_buffer, &begin_info).ThrowIfError();
-
-        // Transition the images to the correct layout for rendering
-        for (int i = 0; i < ImageCount; i++)
-        {
-            var barrier = new VkImageMemoryBarrier
-            {
-                sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-                image = Frames[i].Backbuffer,
-                oldLayout = VkImageLayout.Undefined,
-                newLayout = VkImageLayout.PresentSrcKHR,
-                srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            };
-            barrier.subresourceRange.aspectMask = VkImageAspectFlags.Color;
-            barrier.subresourceRange.levelCount = 1;
-            barrier.subresourceRange.layerCount = 1;
-            _vd.vkCmdPipelineBarrier(
-                command_buffer,
-                VkPipelineStageFlags.BottomOfPipe,
-                VkPipelineStageFlags.ColorAttachmentOutput,
-                0,
-                0,
-                null,
-                0,
-                null,
-                1,
-                &barrier
-            );
-        }
-
-        _vd.vkEndCommandBuffer(command_buffer).ThrowIfError();
-        var submit_info = new VkSubmitInfo
-        {
-            sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-            commandBufferCount = 1,
-            pCommandBuffers = &command_buffer,
-        };
-
-        VkQueue queue;
-        _vd.vkGetDeviceQueue(queue_family, 0, &queue);
-        _vd.vkQueueSubmit(queue, 1, &submit_info, fence).ThrowIfError();
-        _vd.vkWaitForFences(1, &fence, true, uint.MaxValue).ThrowIfError();
-        _vd.vkResetFences(1, &fence).ThrowIfError();
-
-        _vd.vkResetCommandPool(command_pool, 0).ThrowIfError();
-
-        // Destroy command buffer and fence and command pool
-        _vd.vkFreeCommandBuffers(command_pool, 1, &command_buffer);
-        _vd.vkDestroyCommandPool(command_pool, default);
-        _vd.vkDestroyFence(fence, default);
     }
 
     // All the ImGui_ImplVulkanH_XXX structures/functions are optional helpers used by the demo.

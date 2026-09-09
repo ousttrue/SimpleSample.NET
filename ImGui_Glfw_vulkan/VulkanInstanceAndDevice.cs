@@ -254,34 +254,37 @@ unsafe class VulkanInstanceAndDevice : IDisposable
             queue_info[0].queueFamilyIndex = QueueFamily;
             queue_info[0].queueCount = 1;
             queue_info[0].pQueuePriorities = queue_priority;
+
+            VkPhysicalDeviceFeatures deviceFeatures = default;
             var create_info = new VkDeviceCreateInfo
             {
                 sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
                 queueCreateInfoCount = 1,
                 pQueueCreateInfos = queue_info,
+                pEnabledFeatures = &deviceFeatures,
             };
             // (create_info.EnabledLayerCount, create_info.PpEnabledLayerNames) = layers;
             (create_info.enabledExtensionCount, create_info.ppEnabledExtensionNames) =
                 device_extensions;
 
-            if (useDynamicRendering)
+            var enabledVk12Features = new VkPhysicalDeviceVulkan12Features
             {
-                var ext_feature = new VkPhysicalDeviceDynamicRenderingFeatures()
-                {
-                    sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES,
-                };
-                var physical_features2 = new VkPhysicalDeviceFeatures2
-                {
-                    sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
-                    pNext = &ext_feature,
-                };
-                _vi.vkGetPhysicalDeviceFeatures2(PhysicalDevice, &physical_features2);
-                if (!ext_feature.dynamicRendering)
-                {
-                    throw new Exception();
-                }
-                create_info.pNext = &physical_features2;
-            }
+                sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+                descriptorIndexing = true,
+                shaderSampledImageArrayNonUniformIndexing = true,
+                descriptorBindingVariableDescriptorCount = true,
+                runtimeDescriptorArray = true,
+                bufferDeviceAddress = true,
+            };
+            var enabledVk13Features = new VkPhysicalDeviceVulkan13Features
+            {
+                sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
+                pNext = &enabledVk12Features,
+                synchronization2 = true,
+                dynamicRendering = true,
+            };
+            // var enabledVk10Features = new VkPhysicalDeviceFeatures { samplerAnisotropy = true };
+            create_info.pNext = &enabledVk13Features;
 
             _vi.vkCreateDevice(PhysicalDevice, &create_info, default, out Device).ThrowIfError();
             _vd = new VkDeviceApi(_vi, Device);

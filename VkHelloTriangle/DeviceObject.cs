@@ -51,7 +51,7 @@ public class DeviceObject : IDisposable
             synchronization2 = true,
             dynamicRendering = true,
         };
-        var enabledVk10Features = new VkPhysicalDeviceFeatures { samplerAnisotropy = true };
+        // var enabledVk10Features = new VkPhysicalDeviceFeatures { samplerAnisotropy = true };
 
         VkPhysicalDeviceFeatures deviceFeatures = default;
         var createInfo = new VkDeviceCreateInfo
