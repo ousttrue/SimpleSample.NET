@@ -40,10 +40,8 @@ unsafe class HelloTriangleApplication
     private VkInstance instance;
     private VkInstanceApi instanceApi;
 
-    // private DebugUtils extDebugUtils;
-    private VkDebugUtilsMessengerEXT debugMessenger;
+    private DebugUtilsMessengerObject debugUtilsMessenger;
 
-    // private KhrSurface khrSurface;
     private VkSurfaceKHR surface;
 
     private VkPhysicalDevice physicalDevice;
@@ -100,7 +98,10 @@ unsafe class HelloTriangleApplication
     void initVulkan()
     {
         createInstance();
-        setupDebugMessenger();
+        if (enableValidationLayers)
+        {
+            debugUtilsMessenger = new(instanceApi);
+        }
         createSurface();
         pickPhysicalDevice();
         createLogicalDevice();
@@ -152,7 +153,7 @@ unsafe class HelloTriangleApplication
 
         if (enableValidationLayers)
         {
-            instanceApi.vkDestroyDebugUtilsMessengerEXT(debugMessenger, null);
+            debugUtilsMessenger.Dispose();
         }
 
         instanceApi.vkDestroySurfaceKHR(surface, null);
@@ -205,13 +206,11 @@ unsafe class HelloTriangleApplication
         };
         (createInfo.enabledExtensionCount, createInfo.ppEnabledExtensionNames) = extensions;
 
-        VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo = default;
+        VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo = DebugUtilsMessengerObject.CreateInfo;
         ByteStringArrayAllocator layers = [.. validationLayers];
         if (enableValidationLayers)
         {
             (createInfo.enabledLayerCount, createInfo.ppEnabledLayerNames) = layers;
-
-            populateDebugMessengerCreateInfo(out debugCreateInfo);
             createInfo.pNext = &debugCreateInfo;
         }
         if (vkCreateInstance(&createInfo, null, out instance) != VK_SUCCESS)
@@ -219,39 +218,6 @@ unsafe class HelloTriangleApplication
             throw new Exception("failed to create instance!");
         }
         instanceApi = new VkInstanceApi(instance);
-    }
-
-    void populateDebugMessengerCreateInfo(out VkDebugUtilsMessengerCreateInfoEXT createInfo)
-    {
-        createInfo = new VkDebugUtilsMessengerCreateInfoEXT
-        {
-            sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
-            messageSeverity =
-                VkDebugUtilsMessageSeverityFlagsEXT.Verbose
-                | VkDebugUtilsMessageSeverityFlagsEXT.Warning
-                | VkDebugUtilsMessageSeverityFlagsEXT.Error,
-            messageType =
-                VkDebugUtilsMessageTypeFlagsEXT.General
-                | VkDebugUtilsMessageTypeFlagsEXT.Validation
-                | VkDebugUtilsMessageTypeFlagsEXT.Performance,
-            pfnUserCallback = &debugCallback,
-        };
-    }
-
-    void setupDebugMessenger()
-    {
-        if (!enableValidationLayers)
-            return;
-
-        populateDebugMessengerCreateInfo(out var createInfo);
-
-        if (
-            instanceApi.vkCreateDebugUtilsMessengerEXT(&createInfo, null, out debugMessenger)
-            != VK_SUCCESS
-        )
-        {
-            throw new Exception("failed to set up debug messenger!");
-        }
     }
 
     void createSurface()
@@ -1026,20 +992,6 @@ unsafe class HelloTriangleApplication
         }
 
         return true;
-    }
-
-    [UnmanagedCallersOnly]
-    private static uint debugCallback(
-        VkDebugUtilsMessageSeverityFlagsEXT messageSeverity,
-        VkDebugUtilsMessageTypeFlagsEXT messageTypes,
-        VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
-        void* userData
-    )
-    {
-        var msg = Marshal.PtrToStringAnsi((nint)pCallbackData->pMessage);
-        Console.Error.WriteLine($"validation layer: {msg}");
-
-        return VK_FALSE;
     }
 }
 
