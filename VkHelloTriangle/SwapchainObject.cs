@@ -47,6 +47,7 @@ class SwapchainObject : IDisposable
 
     private VkSemaphore imageAvailableSemaphore;
     private VkFence inFlightFence;
+    public readonly VkQueue GraphicsQueue;
     public readonly VkQueue PresentQueue;
 
     private readonly VkImage[] _images;
@@ -87,6 +88,9 @@ class SwapchainObject : IDisposable
             imageCount = swapChainSupport.capabilities.maxImageCount;
         }
         var indices = QueueFamilyIndices.findQueueFamilies(vki, physicalDevice, surface);
+
+        vkd.vkGetDeviceQueue(indices.GraphicsFamily, 0, out GraphicsQueue);
+
         vkd.vkGetDeviceQueue(indices.PresentFamily, 0, out PresentQueue);
 
         {
@@ -313,7 +317,7 @@ class SwapchainObject : IDisposable
         _vkd.vkDestroySwapchainKHR(SwapChain, null);
     }
 
-    public unsafe (uint, VkSemaphore, VkFence, VkCommandBuffer, VkSemaphore) Acquire()
+    public unsafe (uint, VkCommandBuffer) Acquire()
     {
         _vkd.vkDeviceWaitIdle();
 
@@ -334,18 +338,68 @@ class SwapchainObject : IDisposable
             0
         );
 
-        return (
-            imageIndex,
-            imageAvailableSemaphore,
-            inFlightFence,
-            commandBuffer,
-            renderFinishedSemaphore
-        );
+        var beginInfo = new VkCommandBufferBeginInfo
+        {
+            sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        };
+        if (_vkd.vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS)
+        {
+            throw new Exception("failed to begin recording command buffer!");
+        }
+
+        var renderPassInfo = new VkRenderPassBeginInfo
+        {
+            sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+            renderPass = RenderPass,
+            framebuffer = _framebuffers[imageIndex],
+        };
+        renderPassInfo.renderArea.offset = new(0, 0);
+        renderPassInfo.renderArea.extent = Extent;
+
+        var clearColor = new VkClearValue { };
+        clearColor.color.float32[0] = 0.0f;
+        clearColor.color.float32[1] = 0.0f;
+        clearColor.color.float32[2] = 0.0f;
+        clearColor.color.float32[2] = 1.0f;
+        renderPassInfo.clearValueCount = 1;
+        renderPassInfo.pClearValues = &clearColor;
+
+        _vkd.vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VkSubpassContents.Inline);
+
+        return (imageIndex, commandBuffer);
     }
 
     public unsafe void Present(uint imageIndex)
     {
+        _vkd.vkCmdEndRenderPass(commandBuffer);
+        if (_vkd.vkEndCommandBuffer(commandBuffer) != VK_SUCCESS)
+        {
+            throw new Exception("failed to record command buffer!");
+        }
+
+        var waitSemaphores = stackalloc VkSemaphore[] { imageAvailableSemaphore };
+        var waitStages = stackalloc VkPipelineStageFlags[]
+        {
+            VkPipelineStageFlags.ColorAttachmentOutput,
+        };
         var signalSemaphores = stackalloc VkSemaphore[] { renderFinishedSemaphore };
+        var cmd = commandBuffer;
+        var submitInfo = new VkSubmitInfo
+        {
+            sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+            waitSemaphoreCount = 1,
+            pWaitSemaphores = waitSemaphores,
+            pWaitDstStageMask = waitStages,
+            commandBufferCount = 1,
+            pCommandBuffers = &cmd,
+            signalSemaphoreCount = 1,
+            pSignalSemaphores = signalSemaphores,
+        };
+        if (_vkd.vkQueueSubmit(GraphicsQueue, 1, &submitInfo, inFlightFence) != VK_SUCCESS)
+        {
+            throw new Exception("failed to submit draw command buffer!");
+        }
+
         var swapChains = stackalloc VkSwapchainKHR[] { SwapChain };
         var presentInfo = new VkPresentInfoKHR
         {

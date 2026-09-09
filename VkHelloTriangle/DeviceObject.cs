@@ -13,7 +13,6 @@ public class DeviceObject : IDisposable
 
     private readonly VkDevice device;
     public readonly VkDeviceApi Api;
-    public readonly VkQueue GraphicsQueue;
 
     public unsafe DeviceObject(
         VkInstanceApi vki,
@@ -78,8 +77,6 @@ public class DeviceObject : IDisposable
             throw new Exception("failed to create logical device!");
         }
         Api = new VkDeviceApi(vki, device);
-
-        Api.vkGetDeviceQueue(graphicsFamily, 0, out GraphicsQueue);
     }
 
     public unsafe void Dispose()
